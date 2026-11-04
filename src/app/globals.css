@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --color-azul: #1f4e79;
+  --color-azul-escuro: #163a5a;
+  --color-azul-claro: #e8f0f8;
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: #f4f6f9;
+  color: #111827;
+}
