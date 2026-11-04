@@ -94,14 +94,21 @@ npm run test:db   # permissões no banco (precisa de um Postgres local; ver abai
 `test:db` cria um banco descartável e simula o ambiente do Supabase. Por padrão
 usa `postgres://postgres@127.0.0.1:54329/postgres` (mude com `TEST_DATABASE_URL`).
 
-## Decisões provisórias (aguardando confirmação do setor comercial)
+## Decisões de negócio
+
+Confirmadas com o setor comercial:
+
+- Lançamento feito sem internet vale pela **hora em que foi digitado** no aparelho,
+  mesmo que chegue ao servidor depois do prazo (regra a implementar na Fase 2).
+
+Tabela de decisões (confirmadas e provisórias):
 
 | Tema | Como está | Fácil de mudar? |
 |---|---|---|
 | Login | nome de usuário (ex.: `joao.silva`) ou e-mail; senha redefinida pelo Administrador | sim |
 | LUC | única entre lojas **ativas** (LUC de loja que saiu pode ser reaproveitada) | sim |
-| Vigências | sempre a partir do dia 1º de um mês; percentual único (sem faixas) | faixas exigiriam ajuste |
-| 13º não cadastrado | o banco devolve o mínimo padrão e sinaliza a falta; a regra final fica para a Fase 6 | sim |
+| Vigências | sempre a partir do dia 1º de um mês; percentual único — **confirmado: não existe percentual escalonado** | — |
+| 13º não cadastrado | **confirmado: usa o aluguel mínimo padrão** (o sistema apenas sinaliza a falta) | — |
 | Auditor | vê todas as lojas auditadas (sem designação por auditor) | sim |
 | Planilha de lojas | colunas do modelo próprio; reimportar atualiza a loja pela LUC | sim |
 | Segmento | lista mantida pelo Analista (a importação cria segmentos novos) | sim |
