@@ -69,7 +69,7 @@ describe("Analista", () => {
   it("vê valores contratuais, trilha e todos os usuários", () =>
     como(db, U.analista, async (q) => {
       expect(await contar(q, "select count(*) n from loja_percentuais")).toBeGreaterThan(0);
-      expect(await contar(q, "select count(*) n from usuarios")).toBe(4);
+      expect(await contar(q, "select count(*) n from usuarios")).toBe(5);
     }));
 
   it("cadastra loja e vigência; a trilha registra quem fez", () =>

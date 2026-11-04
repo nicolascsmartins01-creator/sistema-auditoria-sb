@@ -16,6 +16,7 @@ export const USUARIOS = {
   analista: "00000000-0000-4000-8000-000000000002",
   auditor: "00000000-0000-4000-8000-000000000003",
   inativo: "00000000-0000-4000-8000-000000000004",
+  auditor2: "00000000-0000-4000-8000-000000000005",
 } as const;
 
 export async function criarBancoTeste(): Promise<Client> {
@@ -38,12 +39,14 @@ export async function criarBancoTeste(): Promise<Client> {
   await db.query(`
     insert into auth.users (id, email) values
       ('${USUARIOS.admin}', 'admin@teste'), ('${USUARIOS.analista}', 'analista@teste'),
-      ('${USUARIOS.auditor}', 'auditor@teste'), ('${USUARIOS.inativo}', 'inativo@teste');
+      ('${USUARIOS.auditor}', 'auditor@teste'), ('${USUARIOS.inativo}', 'inativo@teste'),
+      ('${USUARIOS.auditor2}', 'auditor2@teste');
     insert into public.usuarios (id, nome, login, perfil, ativo) values
       ('${USUARIOS.admin}', 'Admin Teste', 'admin.teste', 'administrador', true),
       ('${USUARIOS.analista}', 'Analista Teste', 'analista.teste', 'analista', true),
       ('${USUARIOS.auditor}', 'Auditor Teste', 'auditor.teste', 'auditor', true),
-      ('${USUARIOS.inativo}', 'Inativo Teste', 'inativo.teste', 'analista', false);
+      ('${USUARIOS.inativo}', 'Inativo Teste', 'inativo.teste', 'analista', false),
+      ('${USUARIOS.auditor2}', 'Auditor Dois', 'auditor2.teste', 'auditor', true);
   `);
   return db;
 }

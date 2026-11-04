@@ -22,12 +22,12 @@ export default async function Inicio({ searchParams }: { searchParams: Promise<{
 
 function PainelAuditor() {
   return (
-    <Cartao titulo="Lançamento de vendas auditadas">
-      <p className="text-gray-700">
-        O lançamento diário (busca da loja, calendário, valor e fotos) estará disponível na próxima etapa do sistema.
-      </p>
-      <p className="mt-3"><Link href="/lojas" className="text-azul underline">Consultar lojas</Link></p>
-    </Cartao>
+    <div className="space-y-4">
+      <Link href="/lancar" className="flex min-h-20 items-center justify-center rounded-xl bg-azul text-xl font-semibold text-white shadow active:bg-azul-escuro">
+        Lançar venda auditada
+      </Link>
+      <p className="text-sm text-gray-600">Escolha a loja, o dia (o calendário já abre no dia anterior), digite o valor e anexe as fotos.</p>
+    </div>
   );
 }
 
@@ -35,12 +35,13 @@ async function PainelAnalista() {
   const sb = await criarClienteServidor();
   const mes = inicioMesAtualFortaleza();
   const ano = Number(hojeFortaleza().slice(0, 4));
-  const [lojas, vigentes, dez, pendPct, pendMin] = await Promise.all([
+  const [lojas, vigentes, dez, pendPct, pendMin, emAnalise] = await Promise.all([
     listarLojas(sb),
     vigentesPorLoja(sb, mes),
     sb.from("loja_aluguel_dezembro").select("loja_id").eq("ano", ano),
     sb.from("loja_percentuais").select("loja_id").is("vigencia_inicio", null),
     sb.from("loja_alugueis_minimos").select("loja_id").is("vigencia_inicio", null),
+    sb.from("lancamentos").select("id", { count: "exact", head: true }).eq("situacao", "em_analise"),
   ]);
   const comPendente = new Set([...(pendPct.data ?? []), ...(pendMin.data ?? [])].map((x) => x.loja_id));
   const ativas = lojas.filter((l) => l.ativa);
@@ -55,6 +56,7 @@ async function PainelAnalista() {
     { rotulo: "Inativas", valor: lojas.length - ativas.length, href: "/lojas?situacao=inativas" },
   ];
   const pendencias = [
+    { qtd: emAnalise.count ?? 0, texto: "lançamento(s) recebido(s) após 72 h aguardando sua análise", href: "/lancamentos?situacao=em_analise" },
     { qtd: lojas.filter((l) => comPendente.has(l.id)).length, texto: "loja(s) com percentual ou mínimo de vigência a definir", href: "/lojas?pendencia=a-definir" },
     { qtd: semPct.length, texto: "loja(s) ativa(s) sem percentual vigente neste mês", href: "/lojas?pendencia=percentual" },
     { qtd: semMin.length, texto: "loja(s) ativa(s) sem aluguel mínimo vigente neste mês", href: "/lojas?pendencia=minimo" },
@@ -71,9 +73,10 @@ async function PainelAnalista() {
           </Link>
         ))}
       </div>
-      <Cartao titulo="Pendências do cadastro">
+      <Link href="/lancar" className="flex min-h-14 items-center justify-center rounded-xl bg-azul text-lg font-semibold text-white shadow">Lançar venda auditada</Link>
+      <Cartao titulo="Pendências">
         {pendencias.length === 0 ? (
-          <p className="text-gray-600">Nenhuma pendência. Todas as lojas ativas têm percentual, mínimo e 13º aluguel cadastrados.</p>
+          <p className="text-gray-600">Nenhuma pendência.</p>
         ) : (
           <ul className="space-y-2">
             {pendencias.map((p) => (
