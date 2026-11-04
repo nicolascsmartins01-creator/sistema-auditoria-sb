@@ -42,7 +42,7 @@ export default async function CentralImportacao() {
           {!imports?.length ? <p className="text-sm text-gray-500">Nenhuma importação ainda.</p> : (
             <ul className="divide-y divide-gray-100 text-sm">
               {imports.map((i) => {
-                const r = i.resumo as Record<string, number>;
+                const r = i.resumo as Record<string, number> & { campos?: string[] };
                 return (
                   <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
                     <span className="w-36 text-gray-500">{formatarDataHora(i.criado_em)}</span>
@@ -51,6 +51,7 @@ export default async function CentralImportacao() {
                       <span className="block text-xs text-gray-500">
                         {nomes.get(i.criado_por) ?? "—"} · {r.lojas_criadas ?? 0} criada(s), {r.lojas_atualizadas ?? 0} atualizada(s), {r.vigencias_gravadas ?? 0} vigência(s), {r.alugueis_13_gravados ?? 0} 13º
                       </span>
+                      {r.campos?.length ? <span className="block text-xs text-gray-500">Campos: {r.campos.join("; ")}</span> : null}
                     </span>
                   </li>
                 );

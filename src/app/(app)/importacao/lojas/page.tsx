@@ -9,9 +9,11 @@ export default async function ImportarLojas() {
     <>
       <Titulo voltar={{ href: "/importacao", texto: "Central de importação" }}>Importar planilha de lojas</Titulo>
       <div className="space-y-5">
-        <Cartao titulo="1. Baixe o modelo e preencha">
+        <Cartao titulo="Modelo (opcional)">
           <p className="mb-3 text-sm text-gray-700">
-            Uma linha por loja. Se a LUC já existir, a loja é atualizada; se não existir, é criada.
+            Uma linha por loja. Você pode usar o modelo ou a sua própria planilha: depois de enviar,
+            escolhe qual coluna corresponde a cada campo — e só os campos escolhidos são atualizados.
+            Se a LUC já existir, a loja é atualizada; se não existir, é criada (nesse caso o nome fantasia é obrigatório).
             Percentual e aluguel mínimo entram como vigência a partir do mês informado (as anteriores são mantidas).
             Aceita .xlsx ou .csv (separado por ponto e vírgula).
           </p>
@@ -23,7 +25,7 @@ export default async function ImportarLojas() {
             </ul>
           </details>
         </Cartao>
-        <Cartao titulo="2. Envie, confira a prévia e confirme">
+        <Cartao titulo="Importar">
           <Importador />
         </Cartao>
       </div>

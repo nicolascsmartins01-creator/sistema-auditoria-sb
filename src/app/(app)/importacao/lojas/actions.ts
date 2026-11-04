@@ -1,70 +1,108 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { exigirUsuario, PERFIS_ANALISTA } from "@/lib/sessao";
 import { mensagemErroBanco } from "@/lib/acoes";
 import { hojeFortaleza } from "@/lib/formato";
-import { LIMITE_BYTES, lerPlanilha } from "@/lib/importacao-lojas/ler-planilha";
+import { LIMITE_BYTES, lerPlanilha, type Celula } from "@/lib/importacao-lojas/ler-planilha";
 import { validarPlanilhaLojas, type ResultadoValidacao } from "@/lib/importacao-lojas/validar";
+import { analisarCabecalho, type ColunaPlanilha, type Mapeamento } from "@/lib/importacao-lojas/mapeamento";
 import { carregarCadastroParaImportacao } from "@/lib/dados/cadastro-importacao";
 
 export interface EstadoImportacao {
-  etapa: "inicio" | "previa" | "concluida";
+  etapa: "inicio" | "mapeamento" | "previa" | "concluida";
+  /** muda a cada resposta, para a tela saber que chegou resultado novo */
+  versao: number;
   erro?: string;
   arquivo?: string;
+  colunas?: ColunaPlanilha[];
+  sugestao?: Mapeamento;
+  totalLinhas?: number;
   resultado?: ResultadoValidacao;
   resumo?: { lojas_criadas: number; lojas_atualizadas: number; vigencias_gravadas: number; alugueis_13_gravados: number };
 }
 
-async function analisar(f: FormData) {
+const CHAVES = ["luc", "nome_fantasia", "localizacao", "segmento", "auditada", "ativa", "percentual",
+  "percentual_vigencia", "aluguel_minimo", "minimo_vigencia", "ano_13", "valor_13"] as const;
+
+const esquemaMapeamento = z.object({
+  linhaCabecalho: z.number().int().min(0).max(50),
+  colunas: z.partialRecord(z.enum(CHAVES), z.number().int().min(0).max(500)),
+  fixos: z.object({
+    percentual_vigencia: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    minimo_vigencia: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    ano_13: z.number().int().min(2000).max(2100).optional(),
+  }).optional(),
+});
+
+async function lerArquivo(f: FormData): Promise<{ erro: string } | { arquivo: File; conteudo: ArrayBuffer; matriz: Celula[][] }> {
   const arquivo = f.get("arquivo");
-  if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Escolha o arquivo da planilha." } as const;
-  if (arquivo.size > LIMITE_BYTES) return { erro: "Arquivo muito grande (limite de 5 MB)." } as const;
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Escolha o arquivo da planilha." };
+  if (arquivo.size > LIMITE_BYTES) return { erro: "Arquivo muito grande (limite de 5 MB)." };
   const conteudo = await arquivo.arrayBuffer();
-  let matriz;
   try {
-    matriz = await lerPlanilha(arquivo.name, conteudo);
+    return { arquivo, conteudo, matriz: await lerPlanilha(arquivo.name, conteudo) };
   } catch (e) {
-    return { erro: (e as Error).message } as const;
+    return { erro: (e as Error).message };
   }
-  const sb = await criarClienteServidor();
-  const resultado = validarPlanilhaLojas(matriz, await carregarCadastroParaImportacao(sb));
-  return { arquivo, conteudo, resultado, sb } as const;
 }
 
-/** Etapa 1: lê e valida a planilha. Nada é gravado. */
-export async function previaImportacao(_: EstadoImportacao, f: FormData): Promise<EstadoImportacao> {
-  await exigirUsuario(PERFIS_ANALISTA);
-  const r = await analisar(f);
-  if ("erro" in r) return { etapa: "inicio", erro: r.erro };
-  return { etapa: "previa", arquivo: r.arquivo.name, resultado: r.resultado };
+function lerMapeamento(f: FormData): Mapeamento | null {
+  try {
+    const r = esquemaMapeamento.safeParse(JSON.parse(String(f.get("mapeamento") ?? "")));
+    return r.success ? (r.data as Mapeamento) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
- * Etapa 2: o arquivo é reenviado e revalidado no servidor (a prévia do
- * navegador nunca é usada como fonte), arquivado no storage privado e
- * gravado numa única transação.
+ * Passos da importação (campo "passo" do formulário):
+ *  - "ler":       lê os títulos das colunas e sugere a correspondência. Nada é gravado.
+ *  - "previa":    aplica a escolha de colunas e valida linha a linha. Nada é gravado.
+ *  - "confirmar": revalida tudo no servidor (a prévia do navegador nunca é usada
+ *                 como fonte), arquiva o arquivo no storage privado e grava numa
+ *                 única transação.
  */
-export async function confirmarImportacao(_: EstadoImportacao, f: FormData): Promise<EstadoImportacao> {
+export async function processarImportacao(anterior: EstadoImportacao, f: FormData): Promise<EstadoImportacao> {
   await exigirUsuario(PERFIS_ANALISTA);
-  const r = await analisar(f);
-  if ("erro" in r) return { etapa: "inicio", erro: r.erro };
-  if (!r.resultado.podeImportar) {
-    return { etapa: "previa", arquivo: r.arquivo.name, resultado: r.resultado, erro: "A planilha tem pendências e não pode ser importada." };
-  }
-  const nomeSeguro = r.arquivo.name.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
-  const caminho = `lojas/${hojeFortaleza()}/${crypto.randomUUID()}-${nomeSeguro}`;
-  const { error: errUp } = await r.sb.storage.from("importacoes").upload(caminho, r.conteudo, {
-    contentType: r.arquivo.type || "application/octet-stream", upsert: false,
-  });
-  if (errUp) return { etapa: "previa", arquivo: r.arquivo.name, resultado: r.resultado, erro: `Falha ao arquivar o arquivo: ${errUp.message}` };
+  const versao = anterior.versao + 1;
+  const passo = String(f.get("passo"));
+  const lido = await lerArquivo(f);
+  if ("erro" in lido) return { etapa: "inicio", versao, erro: lido.erro };
+  const nome = lido.arquivo.name;
 
-  const { data, error } = await r.sb.rpc("importar_lojas", {
-    p_arquivo_nome: r.arquivo.name, p_arquivo_path: caminho, p_linhas: r.resultado.paraGravar,
+  if (passo === "ler") {
+    const cab = analisarCabecalho(lido.matriz);
+    if (!cab.ok) return { etapa: "inicio", versao, erro: cab.erro, arquivo: nome };
+    return { etapa: "mapeamento", versao, arquivo: nome, colunas: cab.colunas, sugestao: cab.sugestao, totalLinhas: cab.totalLinhas };
+  }
+
+  const mapeamento = lerMapeamento(f);
+  if (!mapeamento) return { etapa: "mapeamento", versao, arquivo: nome, erro: "Escolha de colunas inválida. Refaça a seleção." };
+  const sb = await criarClienteServidor();
+  const resultado = validarPlanilhaLojas(lido.matriz, await carregarCadastroParaImportacao(sb), mapeamento);
+
+  if (passo === "previa") return { etapa: "previa", versao, arquivo: nome, resultado };
+
+  if (passo !== "confirmar") return { etapa: "inicio", versao, erro: "Passo desconhecido." };
+  if (!resultado.podeImportar) {
+    return { etapa: "previa", versao, arquivo: nome, resultado, erro: "A planilha tem pendências e não pode ser importada." };
+  }
+  const nomeSeguro = nome.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
+  const caminho = `lojas/${hojeFortaleza()}/${crypto.randomUUID()}-${nomeSeguro}`;
+  const { error: errUp } = await sb.storage.from("importacoes").upload(caminho, lido.conteudo, {
+    contentType: lido.arquivo.type || "application/octet-stream", upsert: false,
   });
-  if (error) return { etapa: "previa", arquivo: r.arquivo.name, resultado: r.resultado, erro: mensagemErroBanco(error) };
+  if (errUp) return { etapa: "previa", versao, arquivo: nome, resultado, erro: `Falha ao arquivar o arquivo: ${errUp.message}` };
+
+  const { data, error } = await sb.rpc("importar_lojas", {
+    p_arquivo_nome: nome, p_arquivo_path: caminho, p_linhas: resultado.paraGravar, p_campos: resultado.camposLidos,
+  });
+  if (error) return { etapa: "previa", versao, arquivo: nome, resultado, erro: mensagemErroBanco(error) };
   revalidatePath("/lojas");
   revalidatePath("/importacao");
-  return { etapa: "concluida", arquivo: r.arquivo.name, resumo: data };
+  return { etapa: "concluida", versao, arquivo: nome, resumo: data };
 }

@@ -8,7 +8,7 @@ export type ChaveColuna =
 export interface Coluna {
   chave: ChaveColuna;
   titulo: string;          // como aparece no modelo
-  obrigatoria: boolean;    // a coluna precisa existir na planilha
+  obrigatoria: boolean;    // precisa ser escolhida na importação
   ajuda: string;
   exemplo: [string, string];
   apelidos?: string[];     // outros títulos aceitos
@@ -18,8 +18,8 @@ export const COLUNAS: Coluna[] = [
   { chave: "luc", titulo: "LUC", obrigatoria: true, apelidos: ["nº luc", "n luc", "no luc", "numero luc"],
     ajuda: "Exatamente como aparece no relatório do portal (ex.: LJ 101/102/102A, Q 001C, ILHA 001/002, T1).",
     exemplo: ["LJ 901", "Q 950C"] },
-  { chave: "nome_fantasia", titulo: "Nome fantasia", obrigatoria: true, apelidos: ["nome", "loja"],
-    ajuda: "Nome da loja.", exemplo: ["Loja Exemplo Calçados", "Quiosque Exemplo Sucos"] },
+  { chave: "nome_fantasia", titulo: "Nome fantasia", obrigatoria: false, apelidos: ["nome", "loja"],
+    ajuda: "Nome da loja. Obrigatório para cadastrar loja nova.", exemplo: ["Loja Exemplo Calçados", "Quiosque Exemplo Sucos"] },
   { chave: "localizacao", titulo: "Localização", obrigatoria: false, apelidos: ["localizacao", "local"],
     ajuda: "Texto livre (piso, corredor, referência).", exemplo: ["Piso L1 – corredor A", "Praça de alimentação"] },
   { chave: "segmento", titulo: "Segmento", obrigatoria: false,

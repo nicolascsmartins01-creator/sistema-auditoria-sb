@@ -222,6 +222,24 @@ describe("Importação da planilha de lojas", () => {
     expect(r2).toMatchObject({ lojas_criadas: 0, lojas_atualizadas: 0, vigencias_gravadas: 0, alugueis_13_gravados: 0 });
   });
 
+  it("só altera os campos enviados (colunas escolhidas)", async () => {
+    const lj = await idLoja("LJ 104");
+    const antes = (await db.query("select nome_fantasia, localizacao, segmento_id, auditada from lojas where id = $1", [lj])).rows[0];
+    const r = await comoConfirmando(db, U.analista, async (q) =>
+      (await q("select importar_lojas('parcial.xlsx', 'lojas/p.xlsx', $1::jsonb, $2::jsonb) r", [
+        JSON.stringify([{ luc: "LJ 104", aluguel_minimo: "6500.00", minimo_vigencia: "2026-11-01" }]),
+        JSON.stringify(["LUC ← coluna A", "Aluguel mínimo ← coluna C"]),
+      ])).rows[0].r);
+    expect(r).toMatchObject({ lojas_atualizadas: 0, vigencias_gravadas: 1, campos: ["LUC ← coluna A", "Aluguel mínimo ← coluna C"] });
+    const depois = (await db.query("select nome_fantasia, localizacao, segmento_id, auditada from lojas where id = $1", [lj])).rows[0];
+    expect(depois).toEqual(antes);
+  });
+
+  it("loja nova sem nome é recusada pelo banco", () =>
+    expect(como(db, U.analista, (q) =>
+      q("select importar_lojas('x.xlsx', 'lojas/x.xlsx', $1::jsonb)", [JSON.stringify([{ luc: "LJ 777", aluguel_minimo: "1.00", minimo_vigencia: "2026-11-01" }])]),
+    )).rejects.toThrow(/sem nome fantasia/));
+
   it("um erro em qualquer linha desfaz a importação inteira", async () => {
     const antes = (await db.query("select count(*)::int n from lojas")).rows[0].n;
     const ruins = [{ ...linhas[1], luc: "T3" }, { ...linhas[1], luc: "T4", percentual: "500" }];

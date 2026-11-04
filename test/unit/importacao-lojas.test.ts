@@ -4,6 +4,7 @@ import { validarPlanilhaLojas, type LojaCadastrada } from "@/lib/importacao-loja
 import { lerPlanilha } from "@/lib/importacao-lojas/ler-planilha";
 import { gerarModeloLojas } from "@/lib/importacao-lojas/modelo";
 import { COLUNAS } from "@/lib/importacao-lojas/colunas";
+import { analisarCabecalho, validarMapeamento } from "@/lib/importacao-lojas/mapeamento";
 
 const CAB = COLUNAS.map((c) => c.titulo);
 const linha = (o: Partial<Record<string, string | number | null>>) =>
@@ -78,13 +79,70 @@ describe("validação da planilha de lojas", () => {
     expect(r.paraGravar).toEqual([]);
   });
 
-  it("exige cabeçalho e avisa colunas desconhecidas e lojas fora da planilha", () => {
-    expect(validarPlanilhaLojas([["A", "B"], ["1", "2"]], cadastro).errosGerais[0]).toContain("cabeçalho");
+  it("sem coluna de LUC reconhecida pede a escolha; acha a linha de títulos e avisa lojas fora da planilha", () => {
+    expect(validarPlanilhaLojas([["A", "B"], ["1", "2"]], cadastro).errosGerais[0]).toContain("LUC");
     const r = validarPlanilhaLojas([["Relatório"], ["LUC", "Nome fantasia", "Observação"], ["T9", "Nova", "x"]], cadastro);
     expect(r.errosGerais).toEqual([]);
-    expect(r.avisosGerais.join()).toContain("Observação");
+    expect(r.camposLidos).toEqual(["LUC ← coluna A", "Nome fantasia ← coluna B"]);
     expect(r.avisosGerais.join()).toContain("LJ 101/102/102A");
     expect(r.linhas[0].linha).toBe(3);
+  });
+});
+
+describe("escolha de colunas", () => {
+  // planilha com títulos próprios do usuário, fora do modelo
+  const planilha = [
+    ["Código", "Loja", "Mínimo novo", "Obs"],
+    ["LJ 101/102/102A", "Nome que não deve ser lido", "21.000,00", "x"],
+    ["T1", "Outro nome", "", "y"],
+  ];
+
+  it("lê só os campos escolhidos; mês de vigência fixo para todas as linhas", () => {
+    const r = validarPlanilhaLojas(planilha, cadastro, {
+      linhaCabecalho: 0, colunas: { luc: 0, aluguel_minimo: 2 }, fixos: { minimo_vigencia: "2026-11-01" },
+    });
+    expect(r.errosGerais).toEqual([]);
+    expect(r.camposLidos).toEqual(["LUC ← coluna A", "Aluguel mínimo (R$) ← coluna C", "Início vigência mínimo: 11/2026 para todas as linhas"]);
+    expect(r.linhas[0]).toMatchObject({ situacao: "atualizacao", nome: "Loja Fictícia A", mudancas: ["Nova vigência de aluguel mínimo a partir de 11/2026: R$ 21.000,00"] });
+    // nada além da LUC e do mínimo vai para o banco (nome, localização etc. ficam como estão)
+    expect(r.linhas[0].dados).toEqual({ luc: "LJ 101/102/102A", aluguel_minimo: "21000.00", minimo_vigencia: "2026-11-01" });
+    // T1 não está cadastrada e o nome não foi escolhido → erro
+    expect(r.linhas[1].erros[0]).toContain("Nome fantasia");
+    expect(r.podeImportar).toBe(false);
+  });
+
+  it("célula vazia num campo escolhido não altera a loja", () => {
+    const r = validarPlanilhaLojas([["LUC", "Mínimo"], ["LJ 101/102/102A", ""]], cadastro, {
+      linhaCabecalho: 0, colunas: { luc: 0, aluguel_minimo: 1 }, fixos: { minimo_vigencia: "2026-11-01" },
+    });
+    expect(r.linhas[0]).toMatchObject({ situacao: "sem_alteracao", dados: { luc: "LJ 101/102/102A" } });
+  });
+
+  it("13º com ano fixo", () => {
+    const r = validarPlanilhaLojas([["LUC", "13º"], ["LJ 101/102/102A", "40.000"]], cadastro, {
+      linhaCabecalho: 0, colunas: { luc: 0, valor_13: 1 }, fixos: { ano_13: 2027 },
+    });
+    expect(r.linhas[0].dados).toEqual({ luc: "LJ 101/102/102A", ano_13: 2027, valor_13: "40000.00" });
+  });
+
+  it("recusa escolhas incoerentes", () => {
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: {} })).toContain("Escolha a coluna da LUC (é ela que identifica a loja).");
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0 } })[0]).toContain("pelo menos um campo");
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, percentual: 1 } })[0]).toContain("Percentual: escolha a coluna do início de vigência");
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, nome_fantasia: 0 } })[0]).toContain("mesma coluna");
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, ano_13: 1 } })).toContain("13º aluguel: foi escolhida a coluna do ano, mas não a do valor.");
+  });
+
+  it("analisa os títulos e sugere a correspondência", () => {
+    const r = analisarCabecalho([["Relatório de lojas"], ["Nº LUC", "Nome", "Piso", "Aluguel mínimo (R$)"], ["LJ 1", "A", "L1", "100"], ["LJ 2", "B", "", "200"]]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.linhaCabecalho).toBe(1);
+    expect(r.totalLinhas).toBe(2);
+    expect(r.sugestao.colunas).toEqual({ luc: 0, nome_fantasia: 1, aluguel_minimo: 3 });
+    expect(r.colunas.map((c) => `${c.letra}:${c.titulo}:${c.exemplos.join("|")}`)).toEqual([
+      "A:Nº LUC:LJ 1|LJ 2", "B:Nome:A|B", "C:Piso:L1", "D:Aluguel mínimo (R$):100|200",
+    ]);
   });
 });
 

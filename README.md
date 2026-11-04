@@ -10,7 +10,7 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 
 | Fase | Conteúdo | Situação |
 |---|---|---|
-| 1 | Login, 3 perfis, usuários, cadastro de lojas (vigências e 13º aluguel), importação da planilha de lojas | **concluída — aguardando aprovação** |
+| 1 | Login, 3 perfis, usuários, cadastro de lojas (vigências e 13º aluguel), importação da planilha de lojas com escolha de colunas | **aprovada** |
 | 2 | Lançamento do auditor (busca, calendário, valor, fotos, offline) | — |
 | 3 | Importação do PDF mensal do portal | — |
 | 4 | Conciliação, projeção e alertas | — |
@@ -98,6 +98,10 @@ usa `postgres://postgres@127.0.0.1:54329/postgres` (mude com `TEST_DATABASE_URL`
 
 Confirmadas com o setor comercial:
 
+- **Prazo de lançamento:** do dia 1 até o **dia 5** do mês seguinte, inclusive
+  (substitui o "dia 4" da especificação original). A revisão do Analista começa no dia 6.
+- **Importação de lojas:** o usuário escolhe qual coluna da planilha corresponde a
+  cada campo; campo não escolhido não é lido nem alterado.
 - Lançamento feito sem internet vale pela **hora em que foi digitado** no aparelho,
   mesmo que chegue ao servidor depois do prazo (regra a implementar na Fase 2).
 
