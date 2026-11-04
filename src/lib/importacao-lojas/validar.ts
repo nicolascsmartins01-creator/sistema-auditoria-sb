@@ -16,7 +16,7 @@ import {
 } from "@/lib/formato";
 import type { ChaveColuna } from "./colunas";
 import { LIMITE_LINHAS, type Celula } from "./ler-planilha";
-import { analisarCabecalho, descreverMapeamento, validarMapeamento, type Mapeamento } from "./mapeamento";
+import { analisarCabecalho, avisosMapeamento, descreverMapeamento, validarMapeamento, type Mapeamento } from "./mapeamento";
 
 export interface LojaCadastrada {
   id: string;
@@ -26,8 +26,8 @@ export interface LojaCadastrada {
   segmento: string | null;
   auditada: boolean;
   ativa: boolean;
-  percentuais: { vigencia_inicio: string; percentual: number }[];
-  minimos: { vigencia_inicio: string; valor: number }[];
+  percentuais: { vigencia_inicio: string | null; percentual: number }[];   // null = a definir
+  minimos: { vigencia_inicio: string | null; valor: number }[];
   dezembro: { ano: number; valor: number }[];
 }
 
@@ -44,9 +44,9 @@ export interface LinhaParaGravar {
   auditada?: boolean | null;
   ativa?: boolean | null;
   percentual?: string;
-  percentual_vigencia?: string;
+  percentual_vigencia?: string | null;   // null = vigência a definir
   aluguel_minimo?: string;
-  minimo_vigencia?: string;
+  minimo_vigencia?: string | null;       // null = vigência a definir
   ano_13?: number;
   valor_13?: string;
 }
@@ -100,6 +100,7 @@ export function validarPlanilhaLojas(
   errosGerais.push(...validarMapeamento(m));
   if (errosGerais.length) return montar();
   camposLidos = descreverMapeamento(m);
+  avisosGerais.push(...avisosMapeamento(m));
 
   const map = m;
   const f = map.fixos ?? {};
@@ -163,40 +164,42 @@ export function validarPlanilhaLojas(
     }
 
     // Vigência: coluna da planilha ou mês fixo escolhido na tela
-    const lerVigencia = (chave: "percentual_vigencia" | "minimo_vigencia", nomeCampo: string): string | null => {
+    // Devolve "aaaa-mm-01", null (= vigência a definir) ou undefined (= inválida, erro já registrado).
+    const lerVigencia = (chave: "percentual_vigencia" | "minimo_vigencia", nomeCampo: string): string | null | undefined => {
       if (!escolhido(chave)) return f[chave] ?? null;
       const bruto = pegar(l, chave);
-      if (texto(bruto) === "") { erros.push(`${nomeCampo} preenchido sem o início de vigência.`); return null; }
+      if (texto(bruto) === "") return null;
       const v = lerMesAno(bruto);
-      if (!v.ok) { erros.push(`Início de vigência do ${nomeCampo.toLowerCase()} inválido: ${v.erro}.`); return null; }
+      if (!v.ok) { erros.push(`Início de vigência do ${nomeCampo.toLowerCase()} inválido: ${v.erro}.`); return undefined; }
       return v.data;
     };
 
     // Percentual
     let percentual: number | null = null;
-    let pctVig: string | null = null;
+    let pctVig: string | null | undefined = null;
     if (escolhido("percentual")) {
       const bruto = pegar(l, "percentual");
       const p = lerNumeroBR(bruto);
       if (p !== null && Number.isNaN(p)) erros.push(`Percentual inválido: "${texto(bruto)}".`);
-      else if (p !== null && (p <= 0 || p > 100)) erros.push("Percentual deve ser maior que 0 e no máximo 100.");
+      else if (p !== null && (p < 0 || p > 100)) erros.push("Percentual deve estar entre 0 e 100.");
       else if (p !== null) {
         percentual = Math.round(p * 10000) / 10000;
         pctVig = lerVigencia("percentual_vigencia", "Percentual");
-        if (percentual < 1) avisos.push(`Percentual de ${formatarPercentual(percentual)} — confira se não quis dizer ${formatarPercentual(percentual * 100)}.`);
+        if (percentual > 0 && percentual < 1) avisos.push(`Percentual de ${formatarPercentual(percentual)} — confira se não quis dizer ${formatarPercentual(percentual * 100)}.`);
         if (percentual > 30) avisos.push(`Percentual alto (${formatarPercentual(percentual)}) — confira.`);
       } else if (escolhido("percentual_vigencia") && texto(pegar(l, "percentual_vigencia")) !== "") {
         erros.push("Início de vigência do percentual preenchido sem o percentual.");
       }
-      if (percentual !== null && pctVig) {
+      if (percentual !== null && pctVig !== undefined) {
         dados.percentual = paraDecimalBanco(percentual, 4);
         dados.percentual_vigencia = pctVig;
+        if (pctVig === null) avisos.push("Percentual com vigência a definir (informe o mês depois na página da loja).");
       }
     }
 
     // Aluguel mínimo
     let minimo: number | null = null;
-    let minVig: string | null = null;
+    let minVig: string | null | undefined = null;
     if (escolhido("aluguel_minimo")) {
       const bruto = pegar(l, "aluguel_minimo");
       const v = lerNumeroBR(bruto);
@@ -208,9 +211,10 @@ export function validarPlanilhaLojas(
       } else if (escolhido("minimo_vigencia") && texto(pegar(l, "minimo_vigencia")) !== "") {
         erros.push("Início de vigência do mínimo preenchido sem o valor.");
       }
-      if (minimo !== null && minVig) {
+      if (minimo !== null && minVig !== undefined) {
         dados.aluguel_minimo = paraDecimalBanco(minimo, 2);
         dados.minimo_vigencia = minVig;
+        if (minVig === null) avisos.push("Aluguel mínimo com vigência a definir (informe o mês depois na página da loja).");
       }
     }
 
@@ -247,18 +251,26 @@ export function validarPlanilhaLojas(
         mudancas.push(`Ativa: ${simNao(existente.ativa)} → ${simNao(dados.ativa)}`);
         if (dados.ativa) avisos.push("A loja estava inativa e será reativada.");
       }
+      if (dados.percentual && pctVig === null && percentual !== null) {
+        const atual = existente.percentuais.find((p) => p.vigencia_inicio === null);
+        if (!atual || Number(atual.percentual) !== percentual) mudancas.push(`Percentual ${formatarPercentual(percentual)} com vigência a definir`);
+      }
       if (dados.percentual && pctVig && percentual !== null) {
         const atual = existente.percentuais.find((p) => p.vigencia_inicio === pctVig);
         if (!atual) mudancas.push(`Nova vigência de percentual a partir de ${formatarMesAno(pctVig)}: ${formatarPercentual(percentual)}`);
         else if (Number(atual.percentual) !== percentual) mudancas.push(`Percentual de ${formatarMesAno(pctVig)}: ${formatarPercentual(atual.percentual)} → ${formatarPercentual(percentual)}`);
-        const maisRecente = existente.percentuais.map((p) => p.vigencia_inicio).sort().at(-1);
+        const maisRecente = existente.percentuais.flatMap((p) => p.vigencia_inicio ?? []).sort().at(-1);
         if (!atual && maisRecente && pctVig < maisRecente) avisos.push(`Vigência de percentual anterior à mais recente cadastrada (${formatarMesAno(maisRecente)}).`);
+      }
+      if (dados.aluguel_minimo && minVig === null && minimo !== null) {
+        const atual = existente.minimos.find((x) => x.vigencia_inicio === null);
+        if (!atual || Number(atual.valor) !== minimo) mudancas.push(`Aluguel mínimo ${formatarMoeda(minimo)} com vigência a definir`);
       }
       if (dados.aluguel_minimo && minVig && minimo !== null) {
         const atual = existente.minimos.find((x) => x.vigencia_inicio === minVig);
         if (!atual) mudancas.push(`Nova vigência de aluguel mínimo a partir de ${formatarMesAno(minVig)}: ${formatarMoeda(minimo)}`);
         else if (Number(atual.valor) !== minimo) mudancas.push(`Aluguel mínimo de ${formatarMesAno(minVig)}: ${formatarMoeda(atual.valor)} → ${formatarMoeda(minimo)}`);
-        const maisRecente = existente.minimos.map((x) => x.vigencia_inicio).sort().at(-1);
+        const maisRecente = existente.minimos.flatMap((x) => x.vigencia_inicio ?? []).sort().at(-1);
         if (!atual && maisRecente && minVig < maisRecente) avisos.push(`Vigência de aluguel mínimo anterior à mais recente cadastrada (${formatarMesAno(maisRecente)}).`);
       }
       if (dados.valor_13 && ano13 !== null && valor13 !== null) {

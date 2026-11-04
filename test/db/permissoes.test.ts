@@ -194,6 +194,37 @@ describe("Regras do cadastro", () => {
   });
 });
 
+describe("Vigência a definir, percentual 0 e exclusão de loja", () => {
+  it("importa valor sem vigência como pendente (um por loja), fora dos valores vigentes", async () => {
+    const linha = (pct: string) => JSON.stringify([{ luc: "LJ 204", percentual: pct, percentual_vigencia: null }]);
+    await comoConfirmando(db, U.analista, (q) => q("select importar_lojas('a.xlsx', 'lojas/a', $1::jsonb)", [linha("0")]));
+    await comoConfirmando(db, U.analista, (q) => q("select importar_lojas('b.xlsx', 'lojas/b', $1::jsonb)", [linha("9.5")]));
+    const lj = await idLoja("LJ 204");
+    const r = await db.query("select percentual from loja_percentuais where loja_id = $1 and vigencia_inicio is null", [lj]);
+    expect(r.rows).toEqual([{ percentual: "9.5000" }]);
+    const v = (await db.query("select percentual from valores_vigentes($1, 2026, 11)", [lj])).rows[0];
+    expect(v.percentual).toBe("8.0000"); // o pendente não vale para cálculo
+    await expect(db.query("insert into loja_percentuais (loja_id, vigencia_inicio, percentual) values ($1, null, 1)", [lj]))
+      .rejects.toThrow(/pendente_uk/);
+  });
+
+  it("aceita percentual 0 (loja que paga só o mínimo)", () =>
+    como(db, U.analista, async (q) => {
+      await q("insert into loja_percentuais (loja_id, vigencia_inicio, percentual) values ((select id from lojas where luc='LJ 205'), '2026-12-01', 0)");
+    }));
+
+  it("analista não exclui loja; administrador exclui com motivo e a trilha guarda tudo", async () => {
+    const lj = await idLoja("LJ 205");
+    await expect(como(db, U.analista, (q) => q("select excluir_loja($1, 'teste')", [lj]))).rejects.toThrow(/Somente o Administrador/);
+    await expect(como(db, U.admin, (q) => q("select excluir_loja($1, '  ')", [lj]))).rejects.toThrow(/motivo/);
+    await comoConfirmando(db, U.admin, (q) => q("select excluir_loja($1, 'Cadastrada por engano')", [lj]));
+    expect((await db.query("select count(*)::int n from lojas where id = $1", [lj])).rows[0].n).toBe(0);
+    const t = await db.query("select acao, tabela, usuario_id, motivo from trilha_auditoria where (registro_id = $1 or dados_anteriores->>'loja_id' = $1) and acao = 'DELETE' order by id", [lj]);
+    expect(t.rows.length).toBeGreaterThanOrEqual(3);
+    expect(t.rows.at(-1)).toEqual({ acao: "DELETE", tabela: "lojas", usuario_id: U.admin, motivo: "Cadastrada por engano" });
+  });
+});
+
 describe("Importação da planilha de lojas", () => {
   const linhas = [
     { luc: "LJ 103", nome_fantasia: "Calçados Exemplo Renovada", localizacao: "Piso L1 – corredor A", segmento: "Calçados",

@@ -65,12 +65,11 @@ describe("validação da planilha de lojas", () => {
       linha({ luc: "LJ 203", nome_fantasia: "Z2", auditada: "talvez" }),
       linha({ luc: "LJ 204", nome_fantasia: "W", ano_13: 2026 }),
     ], cadastro);
-    const erros = r.linhas.map((l) => [l.linha, l.erros.join(" | ")]);
+    const erros = r.linhas.filter((l) => l.erros.length).map((l) => [l.linha, l.erros.join(" | ")]);
     expect(erros).toEqual([
       [2, "LUC vazia."],
       [3, "Nome fantasia vazio."],
       [4, 'Percentual inválido: "abc".'],
-      [5, "Aluguel mínimo preenchido sem o início de vigência."],
       [6, "Início de vigência do percentual inválido: a vigência deve começar no dia 1º do mês."],
       [7, 'LUC repetida na planilha (também na linha 6). | "Auditada" deve ser S ou N.'],
       [8, "Preencha o ano e o valor do 13º juntos (ou deixe os dois vazios)."],
@@ -128,9 +127,22 @@ describe("escolha de colunas", () => {
   it("recusa escolhas incoerentes", () => {
     expect(validarMapeamento({ linhaCabecalho: 0, colunas: {} })).toContain("Escolha a coluna da LUC (é ela que identifica a loja).");
     expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0 } })[0]).toContain("pelo menos um campo");
-    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, percentual: 1 } })[0]).toContain("Percentual: escolha a coluna do início de vigência");
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, percentual: 1 } })).toEqual([]); // sem vigência é permitido
+    expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, minimo_vigencia: 1 } })[0]).toContain("não a do valor");
     expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, nome_fantasia: 0 } })[0]).toContain("mesma coluna");
     expect(validarMapeamento({ linhaCabecalho: 0, colunas: { luc: 0, ano_13: 1 } })).toContain("13º aluguel: foi escolhida a coluna do ano, mas não a do valor.");
+  });
+
+  it("sem vigência: grava como 'a definir' sem bloquear; aceita percentual 0", () => {
+    const r = validarPlanilhaLojas([["LUC", "Nome", "Alu%", "AMM"], ["LJ 101/102/102A", "Loja Fictícia A", "6", "18500"], ["T7", "Nova Sem Vigência", "0", "3393.73"]], cadastro, {
+      linhaCabecalho: 0, colunas: { luc: 0, nome_fantasia: 1, percentual: 2, aluguel_minimo: 3 },
+    });
+    expect(r.errosGerais).toEqual([]);
+    expect(r.avisosGerais.join()).toContain("vigência a definir");
+    expect(r.camposLidos).toContain("Início vigência %: a definir depois");
+    expect(r.linhas[0].mudancas).toEqual(["Percentual 6,00% com vigência a definir", "Aluguel mínimo R$ 18.500,00 com vigência a definir"]);
+    expect(r.linhas[1]).toMatchObject({ situacao: "nova", dados: { luc: "T7", percentual: "0.0000", percentual_vigencia: null, aluguel_minimo: "3393.73", minimo_vigencia: null } });
+    expect(r.podeImportar).toBe(true);
   });
 
   it("analisa os títulos e sugere a correspondência", () => {

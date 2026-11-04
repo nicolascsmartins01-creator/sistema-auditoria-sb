@@ -130,3 +130,32 @@ export function BotaoExcluir({ acao, pergunta }: { acao: () => Promise<void>; pe
     </form>
   );
 }
+
+/** Define o mês de uma vigência que estava "a definir". */
+export function FormDefinirMes({ acao, anoAtual, mesAtual }: { acao: Acao; anoAtual: number; mesAtual: number }) {
+  const [estado, enviar] = useActionState(acao, ESTADO_INICIAL);
+  return (
+    <form action={enviar} className="mt-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:items-end">
+        <SeletorMesAno anoPadrao={anoAtual} mesPadrao={mesAtual} />
+        <BotaoEnviar variante="secundario">Definir mês</BotaoEnviar>
+      </div>
+      <Mensagem estado={estado} />
+    </form>
+  );
+}
+
+/** Exclusão de loja pelo Administrador, com motivo obrigatório. */
+export function FormExcluirLoja({ acao, nome }: { acao: Acao; nome: string }) {
+  const [estado, enviar] = useActionState(acao, ESTADO_INICIAL);
+  return (
+    <form action={enviar} className="space-y-3"
+      onSubmit={(e) => { if (!confirm(`Excluir definitivamente a loja "${nome}"? Percentuais, mínimos e 13º dela também serão excluídos. O registro fica no histórico.`)) e.preventDefault(); }}>
+      <Campo rotulo="Motivo da exclusão (obrigatório)">
+        <Entrada name="motivo" required placeholder="Ex.: cadastrada em duplicidade" />
+      </Campo>
+      <Mensagem estado={estado} />
+      <BotaoEnviar variante="perigo">Excluir loja</BotaoEnviar>
+    </form>
+  );
+}

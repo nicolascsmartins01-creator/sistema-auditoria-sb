@@ -94,9 +94,8 @@ export function validarMapeamento(m: Mapeamento): string[] {
     else usadas.set(i, k);
   }
 
+  // Valor sem vigência é permitido: fica com "vigência a definir" na loja.
   const par = (valor: ChaveColuna, vig: "percentual_vigencia" | "minimo_vigencia", nome: string) => {
-    const temVig = tem(vig) || Boolean(f[vig]);
-    if (tem(valor) && !temVig) erros.push(`${nome}: escolha a coluna do início de vigência ou um mês fixo para todas as linhas.`);
     if (!tem(valor) && tem(vig)) erros.push(`${nome}: foi escolhida a coluna de vigência, mas não a do valor.`);
   };
   par("percentual", "percentual_vigencia", "Percentual");
@@ -105,6 +104,17 @@ export function validarMapeamento(m: Mapeamento): string[] {
   if (tem("valor_13") && !temAno) erros.push("13º aluguel: escolha a coluna do ano ou um ano fixo para todas as linhas.");
   if (!tem("valor_13") && tem("ano_13")) erros.push("13º aluguel: foi escolhida a coluna do ano, mas não a do valor.");
   return erros;
+}
+
+/** Avisos (não impedem a importação) sobre a escolha de colunas. */
+export function avisosMapeamento(m: Mapeamento): string[] {
+  const a: string[] = [];
+  const f = m.fixos ?? {};
+  if (m.colunas.percentual !== undefined && m.colunas.percentual_vigencia === undefined && !f.percentual_vigencia)
+    a.push("Percentual sem início de vigência: será gravado como “vigência a definir” e o mês poderá ser informado depois na página da loja.");
+  if (m.colunas.aluguel_minimo !== undefined && m.colunas.minimo_vigencia === undefined && !f.minimo_vigencia)
+    a.push("Aluguel mínimo sem início de vigência: será gravado como “vigência a definir” e o mês poderá ser informado depois na página da loja.");
+  return a;
 }
 
 /** Lista legível dos campos que serão lidos e atualizados. */
@@ -120,5 +130,9 @@ export function descreverMapeamento(m: Mapeamento): string[] {
       if (col.chave === "percentual_vigencia") return `${TITULO_CAMPO[col.chave]}: ${fmtMes(f.percentual_vigencia!)} para todas as linhas`;
       if (col.chave === "minimo_vigencia") return `${TITULO_CAMPO[col.chave]}: ${fmtMes(f.minimo_vigencia!)} para todas as linhas`;
       return `${TITULO_CAMPO[col.chave]}: ${f.ano_13} para todas as linhas`;
-    });
+    })
+    .concat(m.colunas.percentual !== undefined && m.colunas.percentual_vigencia === undefined && !f.percentual_vigencia
+      ? [`${TITULO_CAMPO.percentual_vigencia}: a definir depois`] : [])
+    .concat(m.colunas.aluguel_minimo !== undefined && m.colunas.minimo_vigencia === undefined && !f.minimo_vigencia
+      ? [`${TITULO_CAMPO.minimo_vigencia}: a definir depois`] : []);
 }

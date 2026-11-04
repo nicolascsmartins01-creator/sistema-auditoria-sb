@@ -5,7 +5,7 @@ import { useActionState, useEffect, useState, useTransition } from "react";
 import { Aviso, Botao, classesInput, Etiqueta } from "@/components/ui";
 import { processarImportacao, type EstadoImportacao } from "./actions";
 import type { ResultadoLinha, Situacao } from "@/lib/importacao-lojas/validar";
-import { TITULO_CAMPO, validarMapeamento, type ColunaPlanilha, type Mapeamento } from "@/lib/importacao-lojas/mapeamento";
+import { avisosMapeamento, TITULO_CAMPO, validarMapeamento, type ColunaPlanilha, type Mapeamento } from "@/lib/importacao-lojas/mapeamento";
 import type { ChaveColuna } from "@/lib/importacao-lojas/colunas";
 import { MESES } from "@/lib/formato";
 
@@ -207,6 +207,7 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
         </fieldset>
       ))}
 
+      {avisosMapeamento(mapa).map((a) => <Aviso key={a} tipo="info">{a}</Aviso>)}
       {problemas.length > 0 && (
         <Aviso tipo="alerta"><ul className="list-disc pl-4">{problemas.map((p) => <li key={p}>{p}</li>)}</ul></Aviso>
       )}

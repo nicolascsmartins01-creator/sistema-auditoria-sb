@@ -35,11 +35,14 @@ async function PainelAnalista() {
   const sb = await criarClienteServidor();
   const mes = inicioMesAtualFortaleza();
   const ano = Number(hojeFortaleza().slice(0, 4));
-  const [lojas, vigentes, dez] = await Promise.all([
+  const [lojas, vigentes, dez, pendPct, pendMin] = await Promise.all([
     listarLojas(sb),
     vigentesPorLoja(sb, mes),
     sb.from("loja_aluguel_dezembro").select("loja_id").eq("ano", ano),
+    sb.from("loja_percentuais").select("loja_id").is("vigencia_inicio", null),
+    sb.from("loja_alugueis_minimos").select("loja_id").is("vigencia_inicio", null),
   ]);
+  const comPendente = new Set([...(pendPct.data ?? []), ...(pendMin.data ?? [])].map((x) => x.loja_id));
   const ativas = lojas.filter((l) => l.ativa);
   const com13 = new Set((dez.data ?? []).map((d) => d.loja_id));
   const semPct = ativas.filter((l) => vigentes.get(l.id)?.percentual == null);
@@ -52,6 +55,7 @@ async function PainelAnalista() {
     { rotulo: "Inativas", valor: lojas.length - ativas.length, href: "/lojas?situacao=inativas" },
   ];
   const pendencias = [
+    { qtd: lojas.filter((l) => comPendente.has(l.id)).length, texto: "loja(s) com percentual ou mínimo de vigência a definir", href: "/lojas?pendencia=a-definir" },
     { qtd: semPct.length, texto: "loja(s) ativa(s) sem percentual vigente neste mês", href: "/lojas?pendencia=percentual" },
     { qtd: semMin.length, texto: "loja(s) ativa(s) sem aluguel mínimo vigente neste mês", href: "/lojas?pendencia=minimo" },
     { qtd: sem13.length, texto: `loja(s) ativa(s) sem 13º aluguel de ${ano} cadastrado`, href: "/lojas?pendencia=13" },

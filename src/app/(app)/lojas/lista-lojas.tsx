@@ -16,6 +16,7 @@ export interface LinhaLoja {
   percentual: number | null;
   minimo: number | null;
   tem13: boolean;
+  aDefinir: boolean;
 }
 
 export function ListaLojas({ lojas, segmentos, mostrarValores, anoAtual, filtrosIniciais }: {
@@ -41,7 +42,8 @@ export function ListaLojas({ lojas, segmentos, mostrarValores, anoAtual, filtros
         !pendencia ||
         (pendencia === "percentual" && l.percentual === null) ||
         (pendencia === "minimo" && l.minimo === null) ||
-        (pendencia === "13" && !l.tem13))
+        (pendencia === "13" && !l.tem13) ||
+        (pendencia === "a-definir" && l.aDefinir))
       .filter((l) => !termo || semAcento(`${l.nome_fantasia} ${l.luc} ${l.localizacao ?? ""}`).includes(termo))
       .sort((a, b) => a.nome_fantasia.localeCompare(b.nome_fantasia, "pt-BR"));
   }, [lojas, busca, situacao, auditada, segmento, pendencia]);
@@ -71,6 +73,7 @@ export function ListaLojas({ lojas, segmentos, mostrarValores, anoAtual, filtros
             <option value="percentual">Sem percentual vigente</option>
             <option value="minimo">Sem aluguel mínimo vigente</option>
             <option value="13">Sem 13º aluguel de {anoAtual}</option>
+            <option value="a-definir">Com vigência a definir</option>
           </select>
         )}
       </div>
@@ -85,7 +88,8 @@ export function ListaLojas({ lojas, segmentos, mostrarValores, anoAtual, filtros
                 <p className="font-medium text-gray-900">
                   {l.nome_fantasia}{" "}
                   {!l.ativa && <Etiqueta cor="vermelho">Inativa</Etiqueta>}{" "}
-                  {!l.auditada && <Etiqueta cor="cinza">Não auditada</Etiqueta>}
+                  {!l.auditada && <Etiqueta cor="cinza">Não auditada</Etiqueta>}{" "}
+                  {mostrarValores && l.aDefinir && <Etiqueta cor="amarelo">vigência a definir</Etiqueta>}
                 </p>
                 <p className="text-sm text-gray-500">
                   {l.luc}{l.localizacao ? ` · ${l.localizacao}` : ""}{l.segmento ? ` · ${l.segmento}` : ""}

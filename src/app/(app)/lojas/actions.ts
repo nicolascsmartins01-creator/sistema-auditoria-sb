@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { exigirUsuario, PERFIS_ANALISTA } from "@/lib/sessao";
+import { exigirUsuario, PERFIS_ADMIN, PERFIS_ANALISTA } from "@/lib/sessao";
 import { mensagemErroBanco, type EstadoAcao } from "@/lib/acoes";
 import { lerNumeroBR, normalizarLuc, paraDecimalBanco } from "@/lib/formato";
 
@@ -50,7 +50,7 @@ export async function salvarPercentual(lojaId: string, _: EstadoAcao, f: FormDat
   const vig = lerMesAnoForm(f);
   const p = lerNumeroBR(f.get("valor"));
   if (!vig) return { mensagem: "Escolha o mês e o ano de início da vigência." };
-  if (p === null || Number.isNaN(p) || p <= 0 || p > 100) return { mensagem: "Informe um percentual maior que 0 e até 100 (ex.: 6,5)." };
+  if (p === null || Number.isNaN(p) || p < 0 || p > 100) return { mensagem: "Informe um percentual entre 0 e 100 (ex.: 6,5)." };
   const sb = await criarClienteServidor();
   const { error } = await sb.from("loja_percentuais")
     .upsert({ loja_id: lojaId, vigencia_inicio: vig, percentual: paraDecimalBanco(p, 4) }, { onConflict: "loja_id,vigencia_inicio" });
@@ -95,4 +95,34 @@ export async function excluirValor(tabela: (typeof TABELAS_VALORES)[number], id:
   const sb = await criarClienteServidor();
   await sb.from(tabela).delete().eq("id", id).eq("loja_id", lojaId);
   revalidatePath(`/lojas/${lojaId}`);
+}
+
+/** Informa o mês de início de um percentual/mínimo que estava com "vigência a definir". */
+export async function definirMesVigencia(
+  tabela: "loja_percentuais" | "loja_alugueis_minimos", id: string, lojaId: string, _: EstadoAcao, f: FormData,
+): Promise<EstadoAcao> {
+  await exigirUsuario(PERFIS_ANALISTA);
+  if (tabela !== "loja_percentuais" && tabela !== "loja_alugueis_minimos") return { mensagem: "Operação inválida." };
+  const vig = lerMesAnoForm(f);
+  if (!vig) return { mensagem: "Escolha o mês e o ano." };
+  const sb = await criarClienteServidor();
+  const { data, error } = await sb.from(tabela).update({ vigencia_inicio: vig })
+    .eq("id", id).eq("loja_id", lojaId).is("vigencia_inicio", null).select("id");
+  if (error?.code === "23505") return { mensagem: "Já existe um valor cadastrado para esse mês. Exclua um dos dois ou escolha outro mês." };
+  if (error) return { mensagem: mensagemErroBanco(error) };
+  if (!data?.length) return { mensagem: "Registro não encontrado (talvez já tenha sido definido)." };
+  revalidatePath(`/lojas/${lojaId}`);
+  return { ok: true, mensagem: "Vigência definida." };
+}
+
+/** Exclui a loja (somente Administrador, motivo obrigatório; tudo fica na trilha). */
+export async function excluirLoja(lojaId: string, _: EstadoAcao, f: FormData): Promise<EstadoAcao> {
+  await exigirUsuario(PERFIS_ADMIN);
+  const motivo = String(f.get("motivo") ?? "").trim();
+  if (!motivo) return { mensagem: "Informe o motivo da exclusão." };
+  const sb = await criarClienteServidor();
+  const { error } = await sb.rpc("excluir_loja", { p_loja_id: lojaId, p_motivo: motivo });
+  if (error) return { mensagem: mensagemErroBanco(error) };
+  revalidatePath("/lojas");
+  redirect("/lojas?excluida=1");
 }

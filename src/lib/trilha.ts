@@ -38,6 +38,7 @@ const IGNORAR = new Set(["id", "criado_em", "criado_por", "atualizado_em", "loja
 export interface Contexto { segmentos?: Map<number, string> }
 
 function formatarCampo(campo: string, v: unknown, ctx: Contexto): string {
+  if ((v === null || v === undefined) && campo === "vigencia_inicio") return "a definir";
   if (v === null || v === undefined || v === "") return "(vazio)";
   if (typeof v === "boolean") return v ? "Sim" : "Não";
   if (campo === "percentual") return formatarPercentual(v as number);
