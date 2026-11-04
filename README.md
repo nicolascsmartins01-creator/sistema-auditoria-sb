@@ -100,6 +100,9 @@ Confirmadas com o setor comercial:
 
 - **Prazo de lançamento:** do dia 1 até o **dia 5** do mês seguinte, inclusive
   (substitui o "dia 4" da especificação original). A revisão do Analista começa no dia 6.
+- **Fechamento automático:** às 23:59 do 5º dia útil do mês seguinte. Se o 5º dia útil
+  for o próprio dia 5, o mês fecha às 23:59 do dia 5, sem período de revisão; o
+  Analista/Administrador pode reabrir (com motivo) se precisar revisar.
 - **Importação de lojas:** o usuário escolhe qual coluna da planilha corresponde a
   cada campo; campo não escolhido não é lido nem alterado.
 - Lançamento feito sem internet vale pela **hora em que foi digitado** no aparelho,
