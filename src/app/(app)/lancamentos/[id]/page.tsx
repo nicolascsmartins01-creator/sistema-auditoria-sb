@@ -7,6 +7,8 @@ import { ListaTrilha } from "@/components/lista-trilha";
 import type { RegistroTrilha } from "@/lib/trilha";
 import { FormAnalise, FormEditarLancamento } from "../formularios";
 import { analisarLancamento, editarLancamento } from "../actions";
+import { estadoMes } from "@/lib/dados/fechamento";
+import Link from "next/link";
 
 export default async function PaginaLancamento({ params }: { params: Promise<{ id: string }> }) {
   await exigirUsuario(PERFIS_ANALISTA);
@@ -26,6 +28,7 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
   const { data: urls } = caminhos.length ? await sb.storage.from("fotos").createSignedUrls(caminhos, 600) : { data: [] };
   const loja = l.lojas as unknown as { id: string; luc: string; nome_fantasia: string };
   const auditor = (l.usuarios as unknown as { nome: string } | null)?.nome;
+  const mesFechado = (await estadoMes(sb, l.data_venda.slice(0, 7))).situacao === "fechado";
   const atraso = (new Date(l.recebido_em).getTime() - new Date(l.digitado_em).getTime()) / 3600000;
 
   return (
@@ -45,7 +48,12 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
         {atraso > 1 && <p className="mt-3 text-sm text-amber-800">Lançado sem internet: chegou ao servidor {Math.round(atraso)} h depois de digitado.</p>}
       </Cartao>
 
-      {l.situacao === "em_analise" && (
+      {mesFechado && (
+        <Aviso tipo="alerta">O mês deste lançamento está <strong>fechado</strong>: não pode ser editado nem analisado.
+          Para corrigir, <Link href={`/fechamento/${l.data_venda.slice(0, 7)}`} className="underline">reabra o mês</Link> (com motivo).</Aviso>
+      )}
+
+      {l.situacao === "em_analise" && !mesFechado && (
         <Cartao titulo="Análise">
           <Aviso tipo="alerta" className="mb-3">Este lançamento chegou mais de 72 horas depois de digitado e só passa a valer se for aprovado.</Aviso>
           <FormAnalise aprovar={analisarLancamento.bind(null, id, true)} recusar={analisarLancamento.bind(null, id, false)} />
@@ -64,7 +72,7 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
         <p className="mt-2 text-xs text-gray-500">Links de visualização temporários (10 minutos). As fotos ficam em área privada e não podem ser apagadas.</p>
       </Cartao>
 
-      {l.situacao !== "recusado" && (
+      {l.situacao !== "recusado" && !mesFechado && (
         <Cartao titulo="Editar lançamento">
           <FormEditarLancamento acao={editarLancamento.bind(null, id)} valor={formatarValor(l.valor)} />
         </Cartao>

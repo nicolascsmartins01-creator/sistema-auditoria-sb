@@ -24,6 +24,7 @@ export function Calendario({ loja, mes, hoje, aviso, onTrocarLoja, onMes, onLanc
   const [carregando, setCarregando] = useState(true);
   const [daCache, setDaCache] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
+  const [fechado, setFechado] = useState(false);
   const { itens } = useFila();
   const padrao = diaPadrao(hoje);
 
@@ -32,6 +33,10 @@ export function Calendario({ loja, mes, hoje, aviso, onTrocarLoja, onMes, onLanc
     setCarregando(true);
     setErro(null);
     const [ano, m] = mes.split("-").map(Number);
+    setFechado(false);
+    Promise.resolve(clienteNavegador().rpc("estado_mes", { p_competencia: mes + "-01" }))
+      .then(({ data }) => { if (!cancelado && data) setFechado(data.situacao === "fechado"); })
+      .catch(() => { /* sem internet: o servidor confere ao receber */ });
     const aplicar = (linhas: Linha[]) => {
       const mapa: Record<string, InfoDia> = {};
       for (const l of linhas) mapa[l.data_venda] = {
@@ -91,6 +96,7 @@ export function Calendario({ loja, mes, hoje, aviso, onTrocarLoja, onMes, onLanc
       </div>
 
       {erro && <Aviso tipo="alerta">{erro}</Aviso>}
+      {fechado && <Aviso tipo="alerta">Este mês foi fechado: não aceita mais lançamentos.</Aviso>}
       {daCache && <Aviso tipo="info">Sem internet: mostrando os dias salvos da última consulta.</Aviso>}
 
       <div className={`rounded-xl border border-gray-200 bg-white p-2 shadow-sm ${carregando ? "opacity-60" : ""}`}>
@@ -113,7 +119,7 @@ export function Calendario({ loja, mes, hoje, aviso, onTrocarLoja, onMes, onLanc
               if (info.situacao === "pendente_envio") { classe = "bg-amber-100 text-amber-900 border border-amber-300"; icone = "⏳"; rotulo += ", aguardando envio"; }
               else if (info.situacao === "em_analise") { classe = "bg-amber-50 text-amber-900 border border-amber-300"; icone = "🔒"; rotulo += ", em análise"; }
               else { classe = "bg-green-100 text-green-900 border border-green-300"; icone = "🔒"; rotulo += ", lançado"; }
-            } else if (estado === "aberto") {
+            } else if (estado === "aberto" && !fechado) {
               classe = "bg-white text-gray-900 border border-gray-300 active:bg-azul-claro";
               acao = () => onLancar(d);
               rotulo += ", livre";
@@ -133,7 +139,7 @@ export function Calendario({ loja, mes, hoje, aviso, onTrocarLoja, onMes, onLanc
 
       {(() => {
         const info = naFila[padrao] ?? dias[padrao];
-        if (carregando || padrao.slice(0, 7) !== mes || info || estadoDia(padrao, hoje) !== "aberto") return null;
+        if (carregando || fechado || padrao.slice(0, 7) !== mes || info || estadoDia(padrao, hoje) !== "aberto") return null;
         return (
           <button onClick={() => onLancar(padrao)} className="min-h-14 w-full rounded-xl bg-azul text-lg font-semibold text-white shadow active:bg-azul-escuro">
             Lançar {formatarData(padrao)} (ontem)

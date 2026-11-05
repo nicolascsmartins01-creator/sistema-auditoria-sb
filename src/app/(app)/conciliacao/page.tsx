@@ -7,13 +7,14 @@ import { hojeFortaleza, MESES } from "@/lib/formato";
 import { mesAnterior, mesSeguinte } from "@/lib/prazos";
 import { Aviso, Cartao, Etiqueta, Titulo } from "@/components/ui";
 import { Diferenca, reais } from "@/components/valores";
+import { estadoMes, NOMES_SITUACAO } from "@/lib/dados/fechamento";
 
 export default async function PaginaConciliacao({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
   await exigirUsuario(PERFIS_ANALISTA);
   const sb = await criarClienteServidor();
   const pedido = (await searchParams).mes;
   const mes = pedido && /^\d{4}-\d{2}$/.test(pedido) ? pedido : (await ultimoMesComInformado(sb)) ?? mesAnterior(hojeFortaleza().slice(0, 7));
-  const r = await carregarConciliacao(sb, mes);
+  const [r, est] = await Promise.all([carregarConciliacao(sb, mes), estadoMes(sb, mes)]);
   const [a, m] = mes.split("-").map(Number);
   const nomeMes = MESES[m - 1][0].toUpperCase() + MESES[m - 1].slice(1);
 
@@ -24,6 +25,8 @@ export default async function PaginaConciliacao({ searchParams }: { searchParams
         <Link href={`/conciliacao?mes=${mesAnterior(mes)}`} className="rounded-full border bg-white px-3 py-1.5 text-azul">‹</Link>
         <span className="px-3 font-semibold">{nomeMes}/{a} · {r.diasNoMes} dias</span>
         <Link href={`/conciliacao?mes=${mesSeguinte(mes)}`} className="rounded-full border bg-white px-3 py-1.5 text-azul">›</Link>
+        <span className="ml-3"><Etiqueta cor={NOMES_SITUACAO[est.situacao].cor}>{NOMES_SITUACAO[est.situacao].nome}</Etiqueta></span>
+        <Link href={`/fechamento/${mes}`} className="ml-auto text-azul hover:underline">Fechamento do mês →</Link>
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

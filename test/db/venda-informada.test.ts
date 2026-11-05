@@ -4,7 +4,11 @@ import type { Client } from "pg";
 import { USUARIOS as U, como, comoConfirmando, criarBancoTeste } from "./ambiente";
 
 let db: Client;
-beforeAll(async () => { db = await criarBancoTeste(); });
+let mes: string; // mês corrente (aberto)
+beforeAll(async () => {
+  db = await criarBancoTeste();
+  mes = (await db.query("select date_trunc('month', now() at time zone 'America/Fortaleza')::date::text m")).rows[0].m;
+});
 afterAll(async () => { await db?.end(); });
 
 const linhas = [
@@ -14,8 +18,8 @@ const linhas = [
 ];
 const importar = (usuario: string, total: string, substituir = false, ls = linhas) =>
   comoConfirmando(db, usuario, async (q) =>
-    (await q("select importar_venda_informada('2026-09-01', 'set.pdf', 'portal/set.pdf', $1, $2::jsonb, $3) r",
-      [total, JSON.stringify(ls), substituir])).rows[0].r);
+    (await q("select importar_venda_informada($4::date, 'set.pdf', 'portal/set.pdf', $1, $2::jsonb, $3) r",
+      [total, JSON.stringify(ls), substituir, mes])).rows[0].r);
 
 describe("Venda informada", () => {
   it("auditor não importa nem vê", async () => {

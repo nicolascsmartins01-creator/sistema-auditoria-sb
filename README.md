@@ -13,8 +13,8 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 | 1 | Login, 3 perfis, usuários, cadastro de lojas (vigências e 13º aluguel), importação da planilha de lojas com escolha de colunas | **aprovada** |
 | 2 | Lançamento do auditor (busca, calendário, valor, fotos, offline) | **aprovada** |
 | 3 | Importação do PDF mensal do portal | **aprovada** |
-| 4 | Conciliação, projeção e alertas | **concluída — aguardando aprovação** |
-| 5 | Ciclo mensal, feriados, fechamento e reabertura | — |
+| 4 | Conciliação, projeção e alertas | **aprovada** |
+| 5 | Ciclo mensal, feriados, fechamento e reabertura | **concluída — aguardando aprovação** |
 | 6 | Cálculo do aluguel e exportações | — |
 | 7 | Lançamentos em lote por planilha | — |
 | 8 | Painéis | — |
@@ -83,6 +83,8 @@ npm run dev                  # http://localhost:3000
    - `NEXT_PUBLIC_SUPABASE_ANON_KEY` (chave pública *anon* ou *publishable*)
    - `SUPABASE_SERVICE_ROLE_KEY` (chave **secreta** — necessária para criar,
      desativar e redefinir senha de usuários; nunca a coloque no código)
+   - `CRON_SECRET` (texto longo e aleatório; protege o agendamento diário que emite
+     o relatório do fechamento automático — ver `vercel.json`)
 3. No Supabase, em *Authentication → URL Configuration*, informe o endereço da Vercel.
 
 ## PDF fictício do portal

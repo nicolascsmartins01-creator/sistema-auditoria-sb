@@ -6,6 +6,7 @@ import { listarLojas, vigentesPorLoja } from "@/lib/dados/lojas";
 import { hojeFortaleza, inicioMesAtualFortaleza } from "@/lib/formato";
 import { Aviso, Cartao, Etiqueta } from "@/components/ui";
 import { carregarConciliacao, ultimoMesComInformado } from "@/lib/dados/conciliacao";
+import { processarFechamentosAutomaticos } from "@/lib/dados/fechamento";
 import { NOME_CLASSIFICACAO } from "@/lib/conciliacao";
 import { Diferenca, reais } from "@/components/valores";
 
@@ -105,6 +106,7 @@ async function PainelAnalista() {
 /** Alertas da conciliação: qualquer diferença entre projeção e informado. */
 async function PainelAlertas() {
   const sb = await criarClienteServidor();
+  await processarFechamentosAutomaticos(sb);
   const mes = await ultimoMesComInformado(sb);
   if (!mes) {
     return <Cartao titulo="Alertas de conciliação"><p className="text-sm text-gray-600">Importe o PDF do portal de um mês para ver os alertas.</p></Cartao>;

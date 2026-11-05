@@ -14,6 +14,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   ];
   if (ehAnalista(u.perfil)) {
     itens.push({ href: "/conciliacao", texto: "Conciliação" });
+    itens.push({ href: "/fechamento", texto: "Fechamento" });
     itens.push({ href: "/lancamentos", texto: "Lançamentos" });
     itens.push({ href: "/vendas-informadas", texto: "Informado" });
     itens.push({ href: "/segmentos", texto: "Segmentos" });
@@ -21,6 +22,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     itens.push({ href: "/historico", texto: "Histórico" });
   }
   if (ehAdmin(u.perfil)) itens.push({ href: "/usuarios", texto: "Usuários" });
+  if (ehAnalista(u.perfil)) itens.push({ href: "/feriados", texto: "Feriados" });
 
   return (
     <>
