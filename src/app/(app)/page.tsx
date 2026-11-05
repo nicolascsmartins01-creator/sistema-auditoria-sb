@@ -4,7 +4,10 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ehAnalista } from "@/lib/perfis";
 import { listarLojas, vigentesPorLoja } from "@/lib/dados/lojas";
 import { hojeFortaleza, inicioMesAtualFortaleza } from "@/lib/formato";
-import { Aviso, Cartao } from "@/components/ui";
+import { Aviso, Cartao, Etiqueta } from "@/components/ui";
+import { carregarConciliacao, ultimoMesComInformado } from "@/lib/dados/conciliacao";
+import { NOME_CLASSIFICACAO } from "@/lib/conciliacao";
+import { Diferenca, reais } from "@/components/valores";
 
 export default async function Inicio({ searchParams }: { searchParams: Promise<{ aviso?: string }> }) {
   const u = await exigirUsuario();
@@ -15,7 +18,7 @@ export default async function Inicio({ searchParams }: { searchParams: Promise<{
     <div className="space-y-6">
       <h1 className="text-2xl font-bold">Olá, {primeiroNome}</h1>
       {aviso === "sem-permissao" && <Aviso tipo="alerta">Você não tem permissão para acessar aquela página.</Aviso>}
-      {ehAnalista(u.perfil) ? <PainelAnalista /> : <PainelAuditor />}
+      {ehAnalista(u.perfil) ? <><PainelAlertas /><PainelAnalista /></> : <PainelAuditor />}
     </div>
   );
 }
@@ -92,9 +95,47 @@ async function PainelAnalista() {
       </Cartao>
       <Cartao titulo="Em construção">
         <p className="text-sm text-gray-600">
-          Alertas de divergência, conciliação mensal e fechamento aparecerão aqui nas próximas etapas.
+          Fechamento mensal, cálculo do aluguel e relatórios aparecerão aqui nas próximas etapas.
         </p>
       </Cartao>
     </>
+  );
+}
+
+/** Alertas da conciliação: qualquer diferença entre projeção e informado. */
+async function PainelAlertas() {
+  const sb = await criarClienteServidor();
+  const mes = await ultimoMesComInformado(sb);
+  if (!mes) {
+    return <Cartao titulo="Alertas de conciliação"><p className="text-sm text-gray-600">Importe o PDF do portal de um mês para ver os alertas.</p></Cartao>;
+  }
+  const r = await carregarConciliacao(sb, mes);
+  const rotulo = `${mes.slice(5)}/${mes.slice(0, 4)}`;
+  const primeiros = r.alertas.slice(0, 10);
+  return (
+    <Cartao titulo={`Alertas de conciliação — ${rotulo}`}
+      acoes={<Link href={`/conciliacao?mes=${mes}`} className="text-sm text-azul hover:underline">Ver conciliação completa →</Link>}>
+      <div className="mb-4 grid gap-3 sm:grid-cols-4">
+        <div className="rounded-lg bg-red-50 p-3"><p className="text-xs text-red-800">Lojas com alerta</p><p className="text-2xl font-bold text-red-800">{r.alertas.length}<span className="text-sm font-normal"> de {r.conciliadas.length}</span></p></div>
+        <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-600">Para maior ({r.totais.lojasParaMaior})</p><Diferenca centavos={r.totais.diferencaParaMaiorCentavos} /></div>
+        <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-600">Para menor ({r.totais.lojasParaMenor})</p><Diferenca centavos={r.totais.diferencaParaMenorCentavos} /></div>
+        <div className="rounded-lg bg-gray-50 p-3"><p className="text-xs text-gray-600">Sem informado / sem auditoria</p><p className="text-lg font-semibold">{r.semInformado.length} / {r.semAuditoria.length}</p></div>
+      </div>
+      {!primeiros.length ? <p className="text-sm text-gray-600">Nenhuma diferença neste mês.</p> : (
+        <ol className="divide-y divide-gray-100 text-sm">
+          {primeiros.map((c, i) => (
+            <li key={c.loja_id}>
+              <Link href={`/conciliacao/${c.loja_id}?mes=${mes}`} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 hover:bg-azul-claro">
+                <span className="w-6 text-gray-400">{i + 1}.</span>
+                <span className="min-w-0 flex-1 font-medium">{c.nome} <span className="text-xs font-normal text-gray-500">{c.luc} · {c.diasAuditados} dia(s) auditado(s) · informado {reais(c.informadoCentavos)}</span></span>
+                <Diferenca centavos={c.diferencaCentavos} percentual={c.diferencaPercentual} />
+                <Etiqueta cor={c.classificacao === "para_maior" ? "verde" : "vermelho"}>{NOME_CLASSIFICACAO[c.classificacao]}</Etiqueta>
+              </Link>
+            </li>
+          ))}
+        </ol>
+      )}
+      {r.alertas.length > primeiros.length && <p className="mt-2 text-xs text-gray-500">E mais {r.alertas.length - primeiros.length} loja(s) com alerta na conciliação completa.</p>}
+    </Cartao>
   );
 }
