@@ -11,8 +11,8 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 | Fase | Conteúdo | Situação |
 |---|---|---|
 | 1 | Login, 3 perfis, usuários, cadastro de lojas (vigências e 13º aluguel), importação da planilha de lojas com escolha de colunas | **aprovada** |
-| 2 | Lançamento do auditor (busca, calendário, valor, fotos, offline) | **concluída — aguardando aprovação** |
-| 3 | Importação do PDF mensal do portal | — |
+| 2 | Lançamento do auditor (busca, calendário, valor, fotos, offline) | **aprovada** |
+| 3 | Importação do PDF mensal do portal | **concluída — aguardando aprovação** |
 | 4 | Conciliação, projeção e alertas | — |
 | 5 | Ciclo mensal, feriados, fechamento e reabertura | — |
 | 6 | Cálculo do aluguel e exportações | — |
@@ -83,6 +83,13 @@ npm run dev                  # http://localhost:3000
    - `SUPABASE_SERVICE_ROLE_KEY` (chave **secreta** — necessária para criar,
      desativar e redefinir senha de usuários; nunca a coloque no código)
 3. No Supabase, em *Authentication → URL Configuration*, informe o endereço da Vercel.
+
+## PDF fictício do portal
+
+`test/fixtures/` tem PDFs **fictícios** no formato do relatório mensal do portal (E.net),
+usados nos testes: `portal-ficticio-set-2026.pdf` (correto, 3 páginas),
+`portal-ficticio-out-2026.pdf` e `portal-ficticio-total-errado.pdf` (TOTAL não bate).
+Para gerar de novo: `npm run gerar-pdf-ficticio`.
 
 ## Testes
 

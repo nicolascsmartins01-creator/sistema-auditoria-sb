@@ -14,6 +14,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
   ];
   if (ehAnalista(u.perfil)) {
     itens.push({ href: "/lancamentos", texto: "Lançamentos" });
+    itens.push({ href: "/vendas-informadas", texto: "Informado" });
     itens.push({ href: "/segmentos", texto: "Segmentos" });
     itens.push({ href: "/importacao", texto: "Importação" });
     itens.push({ href: "/historico", texto: "Histórico" });

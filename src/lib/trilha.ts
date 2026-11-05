@@ -24,9 +24,10 @@ export const ROTULOS_TABELA: Record<string, string> = {
   importacoes: "Importação",
   lancamentos: "Lançamento",
   lancamento_fotos: "Foto do lançamento",
+  vendas_informadas: "Venda informada",
 };
 
-const FEMININO = new Set(["lojas", "importacoes", "lancamento_fotos"]);
+const FEMININO = new Set(["lojas", "importacoes", "lancamento_fotos", "vendas_informadas"]);
 const flex = (tabela: string, masc: string) => (FEMININO.has(tabela) ? masc.replace(/o$/, "a") : masc);
 
 const ROTULOS_CAMPO: Record<string, string> = {
@@ -34,9 +35,9 @@ const ROTULOS_CAMPO: Record<string, string> = {
   auditada: "Auditada", ativa: "Ativa", ativo: "Ativo", percentual: "Percentual", valor: "Valor",
   vigencia_inicio: "Início da vigência", ano: "Ano", nome: "Nome", perfil: "Perfil", login: "Login",
   arquivo_nome: "Arquivo",
-  data_venda: "Data da venda", situacao: "Situação", caminho: "Arquivo",
+  data_venda: "Data da venda", competencia: "Mês", nome_pdf: "Nome no PDF", situacao: "Situação", caminho: "Arquivo",
 };
-const IGNORAR = new Set(["id", "criado_em", "criado_por", "atualizado_em", "loja_id", "arquivo_path", "resumo", "cliente_id", "auditor_id", "digitado_em", "recebido_em", "lancamento_id", "enviado_por"]);
+const IGNORAR = new Set(["id", "criado_em", "criado_por", "atualizado_em", "loja_id", "arquivo_path", "resumo", "cliente_id", "auditor_id", "importacao_id", "digitado_em", "recebido_em", "lancamento_id", "enviado_por"]);
 
 export interface Contexto { segmentos?: Map<number, string> }
 
@@ -46,6 +47,7 @@ function formatarCampo(campo: string, v: unknown, ctx: Contexto): string {
   if (typeof v === "boolean") return v ? "Sim" : "Não";
   if (campo === "percentual") return formatarPercentual(v as number);
   if (campo === "valor") return formatarMoeda(v as number);
+  if (campo === "competencia") return formatarMesAno(String(v));
   if (campo === "data_venda") return String(v).split("-").reverse().join("/");
   if (campo === "situacao") return ({ valido: "Válido", em_analise: "Em análise", recusado: "Recusado" } as Record<string, string>)[String(v)] ?? String(v);
   if (campo === "caminho") return "foto anexada";

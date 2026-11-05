@@ -6,7 +6,7 @@ import { Cartao, Etiqueta, Titulo } from "@/components/ui";
 
 const TIPOS = [
   { href: "/importacao/lojas", titulo: "Planilha de lojas", texto: "Cadastro e atualização de lojas, percentuais, aluguel mínimo e 13º (Excel/CSV).", pronto: true },
-  { href: null, titulo: "PDF mensal do portal", texto: "Venda informada pelos lojistas, validada pela linha TOTAL.", pronto: false, fase: 3 },
+  { href: "/importacao/portal", titulo: "PDF mensal do portal", texto: "Venda informada pelos lojistas, validada pela linha TOTAL.", pronto: true },
   { href: null, titulo: "Lançamentos em lote", texto: "Vendas auditadas por planilha (Excel/CSV).", pronto: false, fase: 7 },
 ];
 
@@ -14,7 +14,7 @@ export default async function CentralImportacao() {
   await exigirUsuario(PERFIS_ANALISTA);
   const sb = await criarClienteServidor();
   const [{ data: imports }, { data: usuarios }] = await Promise.all([
-    sb.from("importacoes").select("id, tipo, arquivo_nome, resumo, criado_em, criado_por").order("criado_em", { ascending: false }).limit(30),
+    sb.from("importacoes").select("id, tipo, arquivo_nome, resumo, criado_em, criado_por, competencia").order("criado_em", { ascending: false }).limit(30),
     sb.from("usuarios").select("id, nome"),
   ]);
   const nomes = new Map((usuarios ?? []).map((u) => [u.id, u.nome]));
@@ -43,6 +43,19 @@ export default async function CentralImportacao() {
             <ul className="divide-y divide-gray-100 text-sm">
               {imports.map((i) => {
                 const r = i.resumo as Record<string, number> & { campos?: string[] };
+                if (i.tipo === "portal") {
+                  return (
+                    <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
+                      <span className="w-36 text-gray-500">{formatarDataHora(i.criado_em)}</span>
+                      <span className="min-w-0 flex-1">
+                        <a href={`/importacao/arquivo/${i.id}`} className="text-azul hover:underline">{i.arquivo_nome}</a> <Etiqueta cor="azul">PDF portal</Etiqueta>
+                        <span className="block text-xs text-gray-500">
+                          {nomes.get(i.criado_por) ?? "—"} · venda informada de {String(i.competencia).slice(5, 7)}/{String(i.competencia).slice(0, 4)} · {r.linhas ?? 0} linha(s){r.substituiu ? " · substituiu a anterior" : ""}
+                        </span>
+                      </span>
+                    </li>
+                  );
+                }
                 return (
                   <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
                     <span className="w-36 text-gray-500">{formatarDataHora(i.criado_em)}</span>

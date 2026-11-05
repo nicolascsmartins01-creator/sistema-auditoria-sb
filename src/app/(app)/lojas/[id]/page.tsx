@@ -50,7 +50,7 @@ export default async function PaginaLoja({ params, searchParams }: {
   const mesAtual = Number(hoje.slice(5, 7));
   const mesRef = hoje.slice(0, 8) + "01";
 
-  const [segmentos, pcts, mins, dez, trilha, usuarios] = await Promise.all([
+  const [segmentos, pcts, mins, dez, trilha, usuarios, informadas] = await Promise.all([
     sb.from("segmentos").select("id, nome, ativo").order("nome"),
     sb.from("loja_percentuais").select("id, vigencia_inicio, percentual, criado_em").eq("loja_id", id).order("vigencia_inicio", { ascending: false }),
     sb.from("loja_alugueis_minimos").select("id, vigencia_inicio, valor, criado_em").eq("loja_id", id).order("vigencia_inicio", { ascending: false }),
@@ -59,6 +59,7 @@ export default async function PaginaLoja({ params, searchParams }: {
       .or(`and(tabela.eq.lojas,registro_id.eq.${id}),dados_novos->>loja_id.eq.${id},dados_anteriores->>loja_id.eq.${id}`)
       .order("ocorrido_em", { ascending: false }).limit(100),
     sb.from("usuarios").select("id, nome"),
+    sb.from("vendas_informadas").select("competencia, valor").eq("loja_id", id).order("competencia", { ascending: false }).limit(12),
   ]);
   const listaSeg = (segmentos.data ?? []).filter((s) => s.ativo || s.id === loja.segmento_id);
   const mapaSeg = new Map((segmentos.data ?? []).map((s) => [s.id as number, s.nome as string]));
@@ -115,6 +116,21 @@ export default async function PaginaLoja({ params, searchParams }: {
           </ul>
         ) : <p className="mb-3 text-sm text-amber-800">Nenhum 13º aluguel cadastrado.</p>}
         <Form13 acao={salvar13.bind(null, id)} anoAtual={anoAtual} />
+      </Cartao>
+
+      <Cartao titulo="Venda informada (PDF do portal)">
+        {!(informadas.data ?? []).length ? <p className="text-sm text-gray-500">Nenhuma venda informada importada para esta loja.</p> : (
+          <table className="w-full text-sm">
+            <tbody className="divide-y divide-gray-100">
+              {(informadas.data ?? []).map((v) => (
+                <tr key={v.competencia}>
+                  <td className="py-1.5"><a href={`/vendas-informadas?mes=${v.competencia.slice(0, 7)}`} className="text-azul hover:underline">{formatarMesAno(v.competencia)}</a></td>
+                  <td className="text-right tabular-nums">{formatarMoeda(v.valor)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </Cartao>
 
       {ehAdmin(u.perfil) && (
