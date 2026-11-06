@@ -4,7 +4,6 @@ import { useActionState, useEffect, useRef } from "react";
 import { Aviso, Botao, Campo, Entrada, Selecao } from "@/components/ui";
 import { BotaoEnviar } from "@/components/botao-enviar";
 import { ESTADO_INICIAL, type EstadoAcao } from "@/lib/acoes";
-import { MESES } from "@/lib/formato";
 
 type Acao = (estado: EstadoAcao, form: FormData) => Promise<EstadoAcao>;
 
@@ -16,6 +15,8 @@ function Mensagem({ estado }: { estado: EstadoAcao }) {
 export interface DadosLoja {
   luc: string;
   nome_fantasia: string;
+  area_m2: number | string | null;
+  piso: string | null;
   localizacao: string | null;
   segmento_id: number | null;
   auditada: boolean;
@@ -35,8 +36,15 @@ export function FormLoja({ acao, loja, segmentos, textoBotao }: {
         <Campo rotulo="Nome fantasia" erro={estado.erros?.nome_fantasia}>
           <Entrada name="nome_fantasia" defaultValue={loja?.nome_fantasia} required />
         </Campo>
+        <Campo rotulo="Área (m²)" erro={estado.erros?.area_m2}>
+          <Entrada name="area_m2" inputMode="decimal" placeholder="Ex.: 120,50"
+            defaultValue={loja?.area_m2 != null ? Number(loja.area_m2).toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : ""} />
+        </Campo>
+        <Campo rotulo="Piso">
+          <Entrada name="piso" defaultValue={loja?.piso ?? ""} placeholder="Ex.: L1" />
+        </Campo>
         <Campo rotulo="Localização">
-          <Entrada name="localizacao" defaultValue={loja?.localizacao ?? ""} placeholder="Ex.: Piso L1 – corredor A" />
+          <Entrada name="localizacao" defaultValue={loja?.localizacao ?? ""} placeholder="Ex.: corredor A" />
         </Campo>
         <Campo rotulo="Segmento (opcional)">
           <Selecao name="segmento_id" defaultValue={loja?.segmento_id ?? ""}>
@@ -61,28 +69,16 @@ export function FormLoja({ acao, loja, segmentos, textoBotao }: {
   );
 }
 
-function SeletorMesAno({ anoPadrao, mesPadrao }: { anoPadrao: number; mesPadrao: number }) {
-  const anos = Array.from({ length: 8 }, (_, i) => anoPadrao - 4 + i);
+function CampoData({ hoje }: { hoje: string }) {
   return (
-    <>
-      <Campo rotulo="Mês">
-        <Selecao name="mes" defaultValue={mesPadrao}>
-          {MESES.map((m, i) => <option key={m} value={i + 1}>{String(i + 1).padStart(2, "0")} – {m.slice(0, 3)}</option>)}
-        </Selecao>
-      </Campo>
-      <Campo rotulo="Ano">
-        <Selecao name="ano" defaultValue={anoPadrao}>
-          {anos.map((a) => <option key={a}>{a}</option>)}
-        </Selecao>
-      </Campo>
-    </>
+    <Campo rotulo="Início da vigência">
+      <Entrada type="date" name="inicio" defaultValue={hoje} required />
+    </Campo>
   );
 }
 
-/** Formulário de nova vigência (percentual ou aluguel mínimo). Mesmo mês já cadastrado = correção do valor. */
-export function FormVigencia({ acao, tipo, anoAtual, mesAtual }: {
-  acao: Acao; tipo: "percentual" | "minimo"; anoAtual: number; mesAtual: number;
-}) {
+/** Formulário de nova vigência (percentual ou aluguel mínimo). Mesma data já cadastrada = correção do valor. */
+export function FormVigencia({ acao, tipo, hoje }: { acao: Acao; tipo: "percentual" | "minimo"; hoje: string }) {
   const [estado, enviar] = useActionState(acao, ESTADO_INICIAL);
   const form = useRef<HTMLFormElement>(null);
   useEffect(() => {
@@ -91,9 +87,9 @@ export function FormVigencia({ acao, tipo, anoAtual, mesAtual }: {
   }, [estado]);
   return (
     <form ref={form} action={enviar} className="space-y-3 rounded-lg bg-gray-50 p-3">
-      <p className="text-sm font-medium text-gray-700">Nova vigência (ou correção de um mês já cadastrado)</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:items-end">
-        <SeletorMesAno anoPadrao={anoAtual} mesPadrao={mesAtual} />
+      <p className="text-sm font-medium text-gray-700">Nova vigência (ou correção de uma data já cadastrada)</p>
+      <div className="grid gap-3 sm:grid-cols-3 sm:items-end">
+        <CampoData hoje={hoje} />
         <Campo rotulo={tipo === "percentual" ? "Percentual (%)" : "Valor (R$)"}>
           <Entrada name="valor" inputMode="decimal" placeholder={tipo === "percentual" ? "6,5" : "12.500,00"} required />
         </Campo>
@@ -131,14 +127,14 @@ export function BotaoExcluir({ acao, pergunta }: { acao: () => Promise<void>; pe
   );
 }
 
-/** Define o mês de uma vigência que estava "a definir". */
-export function FormDefinirMes({ acao, anoAtual, mesAtual }: { acao: Acao; anoAtual: number; mesAtual: number }) {
+/** Define a data de uma vigência que estava "a definir". */
+export function FormDefinirMes({ acao, hoje }: { acao: Acao; hoje: string }) {
   const [estado, enviar] = useActionState(acao, ESTADO_INICIAL);
   return (
     <form action={enviar} className="mt-2 space-y-2">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 sm:items-end">
-        <SeletorMesAno anoPadrao={anoAtual} mesPadrao={mesAtual} />
-        <BotaoEnviar variante="secundario">Definir mês</BotaoEnviar>
+      <div className="grid gap-2 sm:grid-cols-2 sm:items-end">
+        <CampoData hoje={hoje} />
+        <BotaoEnviar variante="secundario">Definir data</BotaoEnviar>
       </div>
       <Mensagem estado={estado} />
     </form>

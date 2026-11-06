@@ -1,27 +1,33 @@
 /**
  * Validação linha a linha da planilha de cadastro de lojas.
  * Função pura (sem banco): recebe a matriz lida da planilha, o cadastro atual e
- * a escolha de colunas; devolve a prévia (o que será criado/alterado) e os erros.
+ * a escolha de colunas; devolve a prévia (o que será criado/alterado) e os avisos.
  *
- * Regras:
- *  - Só os campos com coluna escolhida são lidos e atualizados; os demais
- *    ficam como estão no cadastro.
- *  - Qualquer erro bloqueia a importação inteira (tudo ou nada).
- *  - Célula vazia em Auditada/Ativa/Percentual/Mínimo/13º = não altera aquela loja.
- *    Célula vazia em Localização/Segmento = apaga o valor (o campo foi escolhido).
+ * Regras (a importação nunca é barrada por uma informação faltando ou ilegível):
+ *  - Só os campos com coluna escolhida são lidos; os demais ficam como estão.
+ *  - Célula vazia (ou "-", "n/a") = não altera aquele campo da loja.
+ *  - Valor que não dá para entender é ignorado, com aviso na linha; o resto da linha é gravado.
+ *  - Loja nova sem nome é cadastrada com a LUC como nome (ajustar depois).
+ *  - Linha sem LUC é ignorada (títulos de grupo, totais, linhas em branco).
+ *  - A mesma LUC em várias linhas é aceita (ex.: uma linha por vigência).
+ *  - Vigência pode começar em qualquer dia; sem data, fica "a definir".
  */
 import {
-  formatarMesAno, formatarMoeda, formatarPercentual, lerMesAno, lerNumeroBR,
+  celulaVazia, formatarData, formatarMoeda, formatarPercentual, lerDataVigencia, lerNumeroBR,
   lerSimNao, normalizarLuc, paraDecimalBanco,
 } from "@/lib/formato";
 import type { ChaveColuna } from "./colunas";
 import { LIMITE_LINHAS, type Celula } from "./ler-planilha";
-import { analisarCabecalho, avisosMapeamento, descreverMapeamento, validarMapeamento, type Mapeamento } from "./mapeamento";
+import {
+  analisarCabecalho, avisosMapeamento, descreverMapeamento, fontesVigencia, validarMapeamento, type FonteVigencia, type Mapeamento,
+} from "./mapeamento";
 
 export interface LojaCadastrada {
   id: string;
   luc: string;
   nome_fantasia: string;
+  area_m2: number | null;
+  piso: string | null;
   localizacao: string | null;
   segmento: string | null;
   auditada: boolean;
@@ -31,18 +37,16 @@ export interface LojaCadastrada {
   dezembro: { ano: number; valor: number }[];
 }
 
-/**
- * Formato enviado à função importar_lojas do banco. Campo AUSENTE = não
- * alterar; presente com null = apagar (localização/segmento) ou manter
- * (auditada/ativa).
- */
+/** Formato enviado à função importar_lojas do banco. Campo AUSENTE = não alterar. */
 export interface LinhaParaGravar {
   luc: string;
   nome_fantasia?: string;
-  localizacao?: string | null;
-  segmento?: string | null;
-  auditada?: boolean | null;
-  ativa?: boolean | null;
+  area_m2?: string;
+  piso?: string;
+  localizacao?: string;
+  segmento?: string;
+  auditada?: boolean;
+  ativa?: boolean;
   percentual?: string;
   percentual_vigencia?: string | null;   // null = vigência a definir
   aluguel_minimo?: string;
@@ -74,8 +78,17 @@ export interface ResultadoValidacao {
   paraGravar: LinhaParaGravar[];
 }
 
-const texto = (v: Celula | undefined): string => (v === null || v === undefined ? "" : String(v).trim());
+const texto = (v: Celula | undefined): string =>
+  celulaVazia(v) ? "" : v instanceof Date ? formatarData(v.toISOString().slice(0, 10)) : String(v).replace(/\s+/g, " ").trim();
 const simNao = (b: boolean) => (b ? "Sim" : "Não");
+const igual = (a: string | null | undefined, b: string | null | undefined) =>
+  (a ?? "").trim().toLowerCase() === (b ?? "").trim().toLowerCase();
+const fmtArea = (n: number) => `${n.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} m²`;
+
+/** Lista curta de números de linha: "3, 7, 12 e mais 4". */
+function listaLinhas(ns: number[]): string {
+  return ns.slice(0, 15).join(", ") + (ns.length > 15 ? ` e mais ${ns.length - 15}` : "");
+}
 
 export function validarPlanilhaLojas(
   matriz: Celula[][],
@@ -109,10 +122,12 @@ export function validarPlanilhaLojas(
     const i = map.colunas[c];
     return i === undefined ? undefined : l[i];
   };
+  const origemPct = fontesVigencia(map, "percentual_vigencia");
+  const origemMin = fontesVigencia(map, "minimo_vigencia");
 
   const corpo = matriz.slice(map.linhaCabecalho + 1);
   if (corpo.length > LIMITE_LINHAS) {
-    errosGerais.push(`A planilha tem ${corpo.length} linhas; o limite é ${LIMITE_LINHAS}.`);
+    errosGerais.push(`A planilha tem ${corpo.length} linhas; o limite é ${LIMITE_LINHAS}. Divida em duas planilhas.`);
     return montar();
   }
 
@@ -123,118 +138,132 @@ export function validarPlanilhaLojas(
     if (!atual || (!atual.ativa && l.ativa)) porLuc.set(l.luc, l);
   }
   const lucsNaPlanilha = new Map<string, number>();
+  const semLuc: number[] = [];
+  const ignoradas: number[] = [];
+  const repetidas: number[] = [];
 
   corpo.forEach((l, i) => {
     const numero = map.linhaCabecalho + i + 2;
-    if (l.every((c) => texto(c) === "")) return; // linha em branco
-    const erros: string[] = [];
+    if (l.every((c) => celulaVazia(c))) return; // linha em branco
     const avisos: string[] = [];
     const mudancas: string[] = [];
-    const dados: LinhaParaGravar = { luc: "" };
 
-    const luc = normalizarLuc(pegar(l, "luc"));
-    dados.luc = luc;
-    if (!luc) erros.push("LUC vazia.");
-    else if (lucsNaPlanilha.has(luc)) erros.push(`LUC repetida na planilha (também na linha ${lucsNaPlanilha.get(luc)}).`);
-    else lucsNaPlanilha.set(luc, numero);
-    const existente = luc ? porLuc.get(luc) : undefined;
+    const luc = normalizarLuc(texto(pegar(l, "luc")));
+    if (!luc) { semLuc.push(numero); return; }
+    // linha de total/subtotal, ou título de grupo (só a célula da LUC preenchida): não é loja
+    const soLuc = l.every((c, i) => i === map.colunas.luc || celulaVazia(c));
+    if (/^(sub\s*)?tota(l|is)\b|^total\s+geral/i.test(luc) || soLuc) {
+      ignoradas.push(numero);
+      return;
+    }
+    const dados: LinhaParaGravar = { luc };
+    if (lucsNaPlanilha.has(luc)) {
+      repetidas.push(numero);
+      avisos.push(`LUC também aparece na linha ${lucsNaPlanilha.get(luc)}: as duas linhas são gravadas (a de baixo prevalece nos dados da loja).`);
+    } else lucsNaPlanilha.set(luc, numero);
+    const existente = porLuc.get(luc);
+    const ignorado = (campo: string, bruto: Celula | undefined, motivo = "não reconhecido") =>
+      avisos.push(`${campo} ${motivo} (“${texto(bruto)}”): campo ignorado nesta linha.`);
 
-    // Nome fantasia
+    // Nome
     let nome = existente?.nome_fantasia ?? "";
     if (escolhido("nome_fantasia")) {
-      nome = texto(pegar(l, "nome_fantasia"));
-      if (!nome) erros.push("Nome fantasia vazio.");
-      else dados.nome_fantasia = nome;
-    } else if (luc && !existente) {
-      erros.push('Loja nova (LUC não cadastrada): é preciso escolher a coluna "Nome fantasia" para cadastrá-la.');
+      const n = texto(pegar(l, "nome_fantasia"));
+      if (n) { nome = n; dados.nome_fantasia = n; }
+    }
+    if (!existente && !nome) {
+      nome = luc;
+      avisos.push("Loja nova sem nome na planilha: será cadastrada com a LUC como nome (ajuste depois na página da loja).");
     }
 
-    if (escolhido("localizacao")) dados.localizacao = texto(pegar(l, "localizacao")) || null;
-    if (escolhido("segmento")) dados.segmento = texto(pegar(l, "segmento")) || null;
-
-    if (escolhido("auditada")) {
-      const v = lerSimNao(pegar(l, "auditada"));
-      if (v === undefined) erros.push('"Auditada" deve ser S ou N.');
-      else dados.auditada = v;
+    // Área
+    if (escolhido("area")) {
+      const bruto = pegar(l, "area");
+      const limpo = typeof bruto === "string" ? bruto.replace(/m\s*[²2]?\s*$/i, "").trim() : bruto;
+      const a = lerNumeroBR(limpo);
+      if (a !== null && (Number.isNaN(a) || a < 0)) ignorado("Área", bruto);
+      else if (a !== null) dados.area_m2 = paraDecimalBanco(a, 2);
     }
-    if (escolhido("ativa")) {
-      const v = lerSimNao(pegar(l, "ativa"));
-      if (v === undefined) erros.push('"Ativa" deve ser S ou N.');
-      else dados.ativa = v;
+    // Textos simples: vazio = mantém o que está no cadastro
+    for (const k of ["piso", "localizacao", "segmento"] as const) {
+      if (!escolhido(k)) continue;
+      const v = texto(pegar(l, k));
+      if (v) dados[k] = v.slice(0, 200);
     }
 
-    // Vigência: coluna da planilha ou mês fixo escolhido na tela
-    // Devolve "aaaa-mm-01", null (= vigência a definir) ou undefined (= inválida, erro já registrado).
-    const lerVigencia = (chave: "percentual_vigencia" | "minimo_vigencia", nomeCampo: string): string | null | undefined => {
-      if (!escolhido(chave)) return f[chave] ?? null;
-      const bruto = pegar(l, chave);
-      if (texto(bruto) === "") return null;
-      const v = lerMesAno(bruto);
-      if (!v.ok) { erros.push(`Início de vigência do ${nomeCampo.toLowerCase()} inválido: ${v.erro}.`); return undefined; }
-      return v.data;
+    for (const k of ["auditada", "ativa"] as const) {
+      if (!escolhido(k)) continue;
+      const v = lerSimNao(celulaVazia(pegar(l, k)) ? null : pegar(l, k));
+      if (v === undefined) ignorado(k === "auditada" ? "“Auditada”" : "“Ativa”", pegar(l, k), "deveria ser S ou N");
+      else if (v !== null) dados[k] = v;
+    }
+
+    // Vigência (qualquer dia). null = a definir; erro de leitura vira aviso e fica a definir.
+    const lerVig = (fontes: FonteVigencia[], nomeCampo: string): string | null => {
+      for (const fonte of fontes) {
+        if (fonte.tipo === "fixa") return fonte.data;
+        const bruto = l[fonte.indice];
+        if (celulaVazia(bruto)) continue;
+        const v = lerDataVigencia(bruto);
+        if (v.ok) return v.data;
+        avisos.push(`Vigência do ${nomeCampo} não reconhecida (“${texto(bruto)}”): ficará “a definir”.`);
+        return null;
+      }
+      return null;
     };
 
     // Percentual
     let percentual: number | null = null;
-    let pctVig: string | null | undefined = null;
+    let pctVig: string | null = null;
     if (escolhido("percentual")) {
       const bruto = pegar(l, "percentual");
-      const p = lerNumeroBR(bruto);
-      if (p !== null && Number.isNaN(p)) erros.push(`Percentual inválido: "${texto(bruto)}".`);
-      else if (p !== null && (p < 0 || p > 100)) erros.push("Percentual deve estar entre 0 e 100.");
+      let p = lerNumeroBR(bruto);
+      if (p !== null && Number.isNaN(p)) ignorado("Percentual", bruto);
+      else if (p !== null && (p < 0 || p > 100)) ignorado("Percentual", bruto, "fora de 0 a 100");
       else if (p !== null) {
+        if (p > 0 && p < 1 && !(typeof bruto === "string" && bruto.includes("%"))) {
+          avisos.push(`Percentual “${texto(bruto)}” interpretado como ${formatarPercentual(p * 100)}.`);
+          p = p * 100;
+        }
         percentual = Math.round(p * 10000) / 10000;
-        pctVig = lerVigencia("percentual_vigencia", "Percentual");
-        if (percentual > 0 && percentual < 1) avisos.push(`Percentual de ${formatarPercentual(percentual)} — confira se não quis dizer ${formatarPercentual(percentual * 100)}.`);
-        if (percentual > 30) avisos.push(`Percentual alto (${formatarPercentual(percentual)}) — confira.`);
-      } else if (escolhido("percentual_vigencia") && texto(pegar(l, "percentual_vigencia")) !== "") {
-        erros.push("Início de vigência do percentual preenchido sem o percentual.");
-      }
-      if (percentual !== null && pctVig !== undefined) {
+        pctVig = lerVig(origemPct, "percentual");
+        if (percentual > 30) avisos.push(`Percentual alto (${formatarPercentual(percentual)}): confira.`);
         dados.percentual = paraDecimalBanco(percentual, 4);
         dados.percentual_vigencia = pctVig;
-        if (pctVig === null) avisos.push("Percentual com vigência a definir (informe o mês depois na página da loja).");
+        if (pctVig === null) avisos.push("Percentual com vigência a definir.");
       }
     }
 
     // Aluguel mínimo
     let minimo: number | null = null;
-    let minVig: string | null | undefined = null;
+    let minVig: string | null = null;
     if (escolhido("aluguel_minimo")) {
       const bruto = pegar(l, "aluguel_minimo");
       const v = lerNumeroBR(bruto);
-      if (v !== null && Number.isNaN(v)) erros.push(`Aluguel mínimo inválido: "${texto(bruto)}".`);
-      else if (v !== null && v < 0) erros.push("Aluguel mínimo não pode ser negativo.");
+      if (v !== null && (Number.isNaN(v) || v < 0)) ignorado("Aluguel mínimo", bruto);
       else if (v !== null) {
         minimo = Math.round(v * 100) / 100;
-        minVig = lerVigencia("minimo_vigencia", "Aluguel mínimo");
-      } else if (escolhido("minimo_vigencia") && texto(pegar(l, "minimo_vigencia")) !== "") {
-        erros.push("Início de vigência do mínimo preenchido sem o valor.");
-      }
-      if (minimo !== null && minVig !== undefined) {
+        minVig = lerVig(origemMin, "aluguel mínimo");
         dados.aluguel_minimo = paraDecimalBanco(minimo, 2);
         dados.minimo_vigencia = minVig;
-        if (minVig === null) avisos.push("Aluguel mínimo com vigência a definir (informe o mês depois na página da loja).");
+        if (minVig === null) avisos.push("Aluguel mínimo com vigência a definir.");
       }
     }
 
-    // 13º aluguel
+    // 13º aluguel (precisa do ano)
     let ano13: number | null = null;
     let valor13: number | null = null;
     if (escolhido("valor_13")) {
       const v = lerNumeroBR(pegar(l, "valor_13"));
-      if (v !== null && Number.isNaN(v)) erros.push(`Aluguel 13º inválido: "${texto(pegar(l, "valor_13"))}".`);
-      else if (v !== null && v < 0) erros.push("Aluguel 13º não pode ser negativo.");
+      if (v !== null && (Number.isNaN(v) || v < 0)) ignorado("Aluguel 13º", pegar(l, "valor_13"));
       else if (v !== null) valor13 = Math.round(v * 100) / 100;
-
       if (escolhido("ano_13")) {
-        const a = lerNumeroBR(pegar(l, "ano_13"));
-        if (a !== null && (Number.isNaN(a) || !Number.isInteger(a) || a < 2000 || a > 2100)) erros.push(`Ano do 13º inválido: "${texto(pegar(l, "ano_13"))}".`);
+        const bruto = pegar(l, "ano_13");
+        const a = bruto instanceof Date ? bruto.getUTCFullYear() : lerNumeroBR(bruto);
+        if (a !== null && (Number.isNaN(a) || !Number.isInteger(a) || a < 2000 || a > 2100)) ignorado("Ano do 13º", bruto);
         else if (a !== null) ano13 = a;
-        if ((a === null) !== (v === null)) erros.push("Preencha o ano e o valor do 13º juntos (ou deixe os dois vazios).");
-      } else if (valor13 !== null) {
-        ano13 = f.ano_13 ?? null;
-      }
+      } else ano13 = f.ano_13 ?? null;
+      if (valor13 !== null && ano13 === null) avisos.push("13º aluguel sem ano: ignorado nesta linha.");
       if (valor13 !== null && ano13 !== null) {
         dados.ano_13 = ano13;
         dados.valor_13 = paraDecimalBanco(valor13, 2);
@@ -244,53 +273,53 @@ export function validarPlanilhaLojas(
     // O que muda em relação ao cadastro
     if (existente) {
       if (dados.nome_fantasia !== undefined && existente.nome_fantasia !== dados.nome_fantasia) mudancas.push(`Nome: "${existente.nome_fantasia}" → "${dados.nome_fantasia}"`);
-      if (dados.localizacao !== undefined && (existente.localizacao ?? null) !== dados.localizacao) mudancas.push(`Localização: "${existente.localizacao ?? ""}" → "${dados.localizacao ?? ""}"`);
-      if (dados.segmento !== undefined && (existente.segmento ?? "").toLowerCase() !== (dados.segmento ?? "").toLowerCase()) mudancas.push(`Segmento: "${existente.segmento ?? ""}" → "${dados.segmento ?? ""}"`);
-      if (dados.auditada != null && dados.auditada !== existente.auditada) mudancas.push(`Auditada: ${simNao(existente.auditada)} → ${simNao(dados.auditada)}`);
-      if (dados.ativa != null && dados.ativa !== existente.ativa) {
+      if (dados.area_m2 !== undefined && Number(existente.area_m2 ?? NaN) !== Number(dados.area_m2))
+        mudancas.push(`Área: ${existente.area_m2 === null ? "—" : fmtArea(existente.area_m2)} → ${fmtArea(Number(dados.area_m2))}`);
+      if (dados.piso !== undefined && !igual(existente.piso, dados.piso)) mudancas.push(`Piso: "${existente.piso ?? ""}" → "${dados.piso}"`);
+      if (dados.localizacao !== undefined && !igual(existente.localizacao, dados.localizacao)) mudancas.push(`Localização: "${existente.localizacao ?? ""}" → "${dados.localizacao}"`);
+      if (dados.segmento !== undefined && !igual(existente.segmento, dados.segmento)) mudancas.push(`Segmento: "${existente.segmento ?? ""}" → "${dados.segmento}"`);
+      if (dados.auditada !== undefined && dados.auditada !== existente.auditada) mudancas.push(`Auditada: ${simNao(existente.auditada)} → ${simNao(dados.auditada)}`);
+      if (dados.ativa !== undefined && dados.ativa !== existente.ativa) {
         mudancas.push(`Ativa: ${simNao(existente.ativa)} → ${simNao(dados.ativa)}`);
         if (dados.ativa) avisos.push("A loja estava inativa e será reativada.");
       }
-      if (dados.percentual && pctVig === null && percentual !== null) {
-        const atual = existente.percentuais.find((p) => p.vigencia_inicio === null);
-        if (!atual || Number(atual.percentual) !== percentual) mudancas.push(`Percentual ${formatarPercentual(percentual)} com vigência a definir`);
-      }
-      if (dados.percentual && pctVig && percentual !== null) {
+      if (percentual !== null) {
         const atual = existente.percentuais.find((p) => p.vigencia_inicio === pctVig);
-        if (!atual) mudancas.push(`Nova vigência de percentual a partir de ${formatarMesAno(pctVig)}: ${formatarPercentual(percentual)}`);
-        else if (Number(atual.percentual) !== percentual) mudancas.push(`Percentual de ${formatarMesAno(pctVig)}: ${formatarPercentual(atual.percentual)} → ${formatarPercentual(percentual)}`);
-        const maisRecente = existente.percentuais.flatMap((p) => p.vigencia_inicio ?? []).sort().at(-1);
-        if (!atual && maisRecente && pctVig < maisRecente) avisos.push(`Vigência de percentual anterior à mais recente cadastrada (${formatarMesAno(maisRecente)}).`);
+        const quando = pctVig ? `a partir de ${formatarData(pctVig)}` : "com vigência a definir";
+        if (!atual) mudancas.push(`Percentual ${formatarPercentual(percentual)} ${quando}`);
+        else if (Number(atual.percentual) !== percentual) mudancas.push(`Percentual ${quando}: ${formatarPercentual(atual.percentual)} → ${formatarPercentual(percentual)}`);
       }
-      if (dados.aluguel_minimo && minVig === null && minimo !== null) {
-        const atual = existente.minimos.find((x) => x.vigencia_inicio === null);
-        if (!atual || Number(atual.valor) !== minimo) mudancas.push(`Aluguel mínimo ${formatarMoeda(minimo)} com vigência a definir`);
-      }
-      if (dados.aluguel_minimo && minVig && minimo !== null) {
+      if (minimo !== null) {
         const atual = existente.minimos.find((x) => x.vigencia_inicio === minVig);
-        if (!atual) mudancas.push(`Nova vigência de aluguel mínimo a partir de ${formatarMesAno(minVig)}: ${formatarMoeda(minimo)}`);
-        else if (Number(atual.valor) !== minimo) mudancas.push(`Aluguel mínimo de ${formatarMesAno(minVig)}: ${formatarMoeda(atual.valor)} → ${formatarMoeda(minimo)}`);
-        const maisRecente = existente.minimos.flatMap((x) => x.vigencia_inicio ?? []).sort().at(-1);
-        if (!atual && maisRecente && minVig < maisRecente) avisos.push(`Vigência de aluguel mínimo anterior à mais recente cadastrada (${formatarMesAno(maisRecente)}).`);
+        const quando = minVig ? `a partir de ${formatarData(minVig)}` : "com vigência a definir";
+        if (!atual) mudancas.push(`Aluguel mínimo ${formatarMoeda(minimo)} ${quando}`);
+        else if (Number(atual.valor) !== minimo) mudancas.push(`Aluguel mínimo ${quando}: ${formatarMoeda(atual.valor)} → ${formatarMoeda(minimo)}`);
       }
       if (dados.valor_13 && ano13 !== null && valor13 !== null) {
         const atual = existente.dezembro.find((d) => d.ano === ano13);
         if (!atual) mudancas.push(`13º aluguel de ${ano13}: ${formatarMoeda(valor13)}`);
         else if (Number(atual.valor) !== valor13) mudancas.push(`13º aluguel de ${ano13}: ${formatarMoeda(atual.valor)} → ${formatarMoeda(valor13)}`);
       }
-    } else if (luc && !erros.length) {
-      if (!dados.percentual) avisos.push("Loja nova sem percentual cadastrado.");
-      if (!dados.aluguel_minimo) avisos.push("Loja nova sem aluguel mínimo cadastrado.");
+    } else {
+      if (dados.area_m2 !== undefined) mudancas.push(`Área: ${fmtArea(Number(dados.area_m2))}`);
+      if (dados.piso) mudancas.push(`Piso: ${dados.piso}`);
+      if (dados.segmento) mudancas.push(`Segmento: ${dados.segmento}`);
+      if (percentual !== null) mudancas.push(`Percentual ${formatarPercentual(percentual)}${pctVig ? ` a partir de ${formatarData(pctVig)}` : ""}`);
+      if (minimo !== null) mudancas.push(`Aluguel mínimo ${formatarMoeda(minimo)}${minVig ? ` a partir de ${formatarData(minVig)}` : ""}`);
+      if (percentual === null && escolhido("percentual")) avisos.push("Sem percentual: informe depois na página da loja.");
+      if (minimo === null && escolhido("aluguel_minimo")) avisos.push("Sem aluguel mínimo: informe depois na página da loja.");
     }
 
-    const situacao: Situacao = erros.length
-      ? "erro"
-      : !existente ? "nova" : mudancas.length ? "atualizacao" : "sem_alteracao";
+    const primeira = lucsNaPlanilha.get(luc) === numero;
+    const situacao: Situacao = !existente && primeira ? "nova" : mudancas.length ? "atualizacao" : "sem_alteracao";
 
-    linhas.push({ linha: numero, luc, nome, situacao, erros, avisos, mudancas, dados: erros.length ? null : dados });
+    linhas.push({ linha: numero, luc, nome, situacao, erros: [], avisos, mudancas, dados });
   });
 
-  if (!linhas.length) errosGerais.push("A planilha não tem nenhuma linha de loja abaixo da linha de títulos.");
+  if (semLuc.length) avisosGerais.push(`${semLuc.length} linha(s) sem LUC foram ignoradas (linhas ${listaLinhas(semLuc)}). Confira se não é uma loja sem o código.`);
+  if (ignoradas.length) avisosGerais.push(`${ignoradas.length} linha(s) de título ou total foram ignoradas (linhas ${listaLinhas(ignoradas)}): a linha só tinha a célula da LUC preenchida ou era uma linha de total. Se alguma delas for loja, preencha ao menos o nome.`);
+  if (repetidas.length) avisosGerais.push(`${repetidas.length} linha(s) repetem uma LUC já listada acima (linhas ${listaLinhas(repetidas)}). Todas serão gravadas.`);
+  if (!linhas.length) errosGerais.push("Nenhuma linha com LUC foi encontrada abaixo da linha de títulos. Confira se a coluna escolhida para a LUC está certa.");
 
   const naoListadas = cadastro.filter((c) => c.ativa && !lucsNaPlanilha.has(c.luc));
   if (linhas.length && naoListadas.length) {
@@ -305,7 +334,7 @@ export function validarPlanilhaLojas(
   function montar(): ResultadoValidacao {
     const totais = { linhas: linhas.length, nova: 0, atualizacao: 0, sem_alteracao: 0, erro: 0 };
     for (const l of linhas) totais[l.situacao]++;
-    const podeImportar = !errosGerais.length && totais.erro === 0 && totais.nova + totais.atualizacao > 0;
+    const podeImportar = !errosGerais.length && totais.nova + totais.atualizacao > 0;
     return {
       errosGerais, avisosGerais, camposLidos, linhas, totais, podeImportar,
       paraGravar: podeImportar ? linhas.filter((l) => l.situacao !== "sem_alteracao").map((l) => l.dados!) : [],

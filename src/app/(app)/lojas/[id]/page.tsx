@@ -2,7 +2,8 @@ import { notFound } from "next/navigation";
 import { exigirUsuario } from "@/lib/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ehAdmin, ehAnalista } from "@/lib/perfis";
-import { formatarDataHora, formatarMesAno, formatarMoeda, formatarPercentual, hojeFortaleza } from "@/lib/formato";
+import { formatarData, formatarDataHora, formatarMesAno, formatarMoeda, formatarPercentual, hojeFortaleza } from "@/lib/formato";
+import { mesSeguinte } from "@/lib/prazos";
 import { Aviso, Cartao, Etiqueta, Titulo } from "@/components/ui";
 import { ListaTrilha } from "@/components/lista-trilha";
 import type { RegistroTrilha } from "@/lib/trilha";
@@ -17,7 +18,7 @@ export default async function PaginaLoja({ params, searchParams }: {
   const { criada } = await searchParams;
   const sb = await criarClienteServidor();
   const { data: loja } = await sb.from("lojas")
-    .select("id, luc, nome_fantasia, localizacao, segmento_id, auditada, ativa, criado_em, segmentos(nome)")
+    .select("id, luc, nome_fantasia, area_m2, piso, localizacao, segmento_id, auditada, ativa, criado_em, segmentos(nome)")
     .eq("id", id).maybeSingle();
   if (!loja) notFound();
   const segmento = (loja.segmentos as unknown as { nome: string } | null)?.nome;
@@ -37,6 +38,7 @@ export default async function PaginaLoja({ params, searchParams }: {
         <Cartao>
           <dl className="grid gap-3 sm:grid-cols-3">
             <div><dt className="text-sm text-gray-500">Nº LUC</dt><dd className="font-medium">{loja.luc}</dd></div>
+            <div><dt className="text-sm text-gray-500">Piso</dt><dd>{loja.piso ?? "—"}</dd></div>
             <div><dt className="text-sm text-gray-500">Localização</dt><dd>{loja.localizacao ?? "—"}</dd></div>
             <div><dt className="text-sm text-gray-500">Segmento</dt><dd>{segmento ?? "—"}</dd></div>
           </dl>
@@ -47,8 +49,9 @@ export default async function PaginaLoja({ params, searchParams }: {
 
   const hoje = hojeFortaleza();
   const anoAtual = Number(hoje.slice(0, 4));
-  const mesAtual = Number(hoje.slice(5, 7));
   const mesRef = hoje.slice(0, 8) + "01";
+  // vale a vigência iniciada até o último dia do mês (início no meio do mês já vale para o mês inteiro)
+  const proximoMes = mesSeguinte(hoje.slice(0, 7)) + "-01";
 
   const [segmentos, pcts, mins, dez, trilha, usuarios, informadas] = await Promise.all([
     sb.from("segmentos").select("id, nome, ativo").order("nome"),
@@ -64,8 +67,8 @@ export default async function PaginaLoja({ params, searchParams }: {
   const listaSeg = (segmentos.data ?? []).filter((s) => s.ativo || s.id === loja.segmento_id);
   const mapaSeg = new Map((segmentos.data ?? []).map((s) => [s.id as number, s.nome as string]));
   const mapaUsu = new Map((usuarios.data ?? []).map((x) => [x.id as string, x.nome as string]));
-  const pctVigente = (pcts.data ?? []).find((p) => p.vigencia_inicio !== null && p.vigencia_inicio <= mesRef);
-  const minVigente = (mins.data ?? []).find((m) => m.vigencia_inicio !== null && m.vigencia_inicio <= mesRef);
+  const pctVigente = (pcts.data ?? []).find((p) => p.vigencia_inicio !== null && p.vigencia_inicio < proximoMes);
+  const minVigente = (mins.data ?? []).find((m) => m.vigencia_inicio !== null && m.vigencia_inicio < proximoMes);
 
   return (
     <div className="space-y-5">
@@ -82,24 +85,24 @@ export default async function PaginaLoja({ params, searchParams }: {
           <p className="mb-3 text-sm text-gray-600">
             Vigente em {formatarMesAno(mesRef)}: <strong>{pctVigente ? formatarPercentual(pctVigente.percentual) : "não cadastrado"}</strong>
           </p>
-          <TabelaVigencias anoAtual={anoAtual} mesAtual={mesAtual} linhas={(pcts.data ?? []).map((p) => ({
-            id: p.id, inicio: p.vigencia_inicio ? formatarMesAno(p.vigencia_inicio) : null, valor: formatarPercentual(p.percentual), vigente: p.id === pctVigente?.id,
+          <TabelaVigencias hoje={hoje} linhas={(pcts.data ?? []).map((p) => ({
+            id: p.id, inicio: p.vigencia_inicio ? formatarData(p.vigencia_inicio) : null, valor: formatarPercentual(p.percentual), vigente: p.id === pctVigente?.id,
             excluir: excluirValor.bind(null, "loja_percentuais", p.id, id),
             definir: definirMesVigencia.bind(null, "loja_percentuais", p.id, id),
           }))} />
-          <FormVigencia acao={salvarPercentual.bind(null, id)} tipo="percentual" anoAtual={anoAtual} mesAtual={mesAtual} />
+          <FormVigencia acao={salvarPercentual.bind(null, id)} tipo="percentual" hoje={hoje} />
         </Cartao>
 
         <Cartao titulo="Aluguel mínimo">
           <p className="mb-3 text-sm text-gray-600">
             Vigente em {formatarMesAno(mesRef)}: <strong>{minVigente ? formatarMoeda(minVigente.valor) : "não cadastrado"}</strong>
           </p>
-          <TabelaVigencias anoAtual={anoAtual} mesAtual={mesAtual} linhas={(mins.data ?? []).map((m) => ({
-            id: m.id, inicio: m.vigencia_inicio ? formatarMesAno(m.vigencia_inicio) : null, valor: formatarMoeda(m.valor), vigente: m.id === minVigente?.id,
+          <TabelaVigencias hoje={hoje} linhas={(mins.data ?? []).map((m) => ({
+            id: m.id, inicio: m.vigencia_inicio ? formatarData(m.vigencia_inicio) : null, valor: formatarMoeda(m.valor), vigente: m.id === minVigente?.id,
             excluir: excluirValor.bind(null, "loja_alugueis_minimos", m.id, id),
             definir: definirMesVigencia.bind(null, "loja_alugueis_minimos", m.id, id),
           }))} />
-          <FormVigencia acao={salvarMinimo.bind(null, id)} tipo="minimo" anoAtual={anoAtual} mesAtual={mesAtual} />
+          <FormVigencia acao={salvarMinimo.bind(null, id)} tipo="minimo" hoje={hoje} />
         </Cartao>
       </div>
 
@@ -152,8 +155,8 @@ export default async function PaginaLoja({ params, searchParams }: {
 
 type AcaoForm = (e: import("@/lib/acoes").EstadoAcao, f: FormData) => Promise<import("@/lib/acoes").EstadoAcao>;
 
-function TabelaVigencias({ linhas, anoAtual, mesAtual }: {
-  anoAtual: number; mesAtual: number;
+function TabelaVigencias({ linhas, hoje }: {
+  hoje: string;
   linhas: { id: string; inicio: string | null; valor: string; vigente: boolean; excluir: () => Promise<void>; definir: AcaoForm }[];
 }) {
   if (!linhas.length) return <p className="mb-3 text-sm text-amber-800">Nenhuma vigência cadastrada.</p>;
@@ -167,8 +170,8 @@ function TabelaVigencias({ linhas, anoAtual, mesAtual }: {
           <span><strong>{l.valor}</strong> <Etiqueta cor="amarelo">vigência a definir</Etiqueta></span>
           <BotaoExcluir acao={l.excluir} pergunta="Excluir este valor pendente?" />
         </div>
-        <p className="mt-1 text-amber-900">Informe a partir de qual mês este valor vale. Enquanto isso, ele não entra em nenhum cálculo.</p>
-        <FormDefinirMes acao={l.definir} anoAtual={anoAtual} mesAtual={mesAtual} />
+        <p className="mt-1 text-amber-900">Informe a partir de qual data este valor vale. Enquanto isso, ele não entra em nenhum cálculo.</p>
+        <FormDefinirMes acao={l.definir} hoje={hoje} />
       </div>
     ))}
     {datadas.length > 0 && (

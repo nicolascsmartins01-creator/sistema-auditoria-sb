@@ -179,10 +179,18 @@ describe("Regras do cadastro", () => {
       expect(await vv("LJ 104", 2025, 12)).toMatchObject({ aluguel_minimo: null, percentual: null });
     }));
 
-  it("vigência só pode começar no dia 1º", () =>
-    expect(como(db, U.analista, (q) =>
-      q("insert into loja_percentuais (loja_id, vigencia_inicio, percentual) select id, '2026-10-15', 5 from lojas limit 1"),
-    )).rejects.toThrow(/check constraint/));
+  it("vigência pode começar em qualquer dia e já vale para o mês inteiro", async () => {
+    const lj = (await db.query("select id from lojas where ativa order by luc limit 1")).rows[0].id;
+    await comoConfirmando(db, U.analista, (q) =>
+      q("insert into loja_percentuais (loja_id, vigencia_inicio, percentual) values ($1, '2031-03-15', 9.25)", [lj]));
+    const fev = (await db.query("select percentual from valores_vigentes($1, 2031, 2)", [lj])).rows[0];
+    const mar = (await db.query("select percentual, percentual_vigencia_inicio::text v from valores_vigentes($1, 2031, 3)", [lj])).rows[0];
+    expect(Number(fev.percentual)).not.toBe(9.25);
+    expect([Number(mar.percentual), mar.v]).toEqual([9.25, "2031-03-15"]);
+    await db.query("alter table loja_percentuais disable trigger user");
+    await db.query("delete from loja_percentuais where vigencia_inicio = '2031-03-15'");
+    await db.query("alter table loja_percentuais enable trigger user");
+  });
 
   it("LUC é única entre lojas ativas, mas pode ser reaproveitada de loja inativa", async () => {
     await expect(como(db, U.analista, (q) => q("insert into lojas (luc, nome_fantasia) values ('LJ 103', 'Duplicada')")))
@@ -266,10 +274,12 @@ describe("Importação da planilha de lojas", () => {
     expect(depois).toEqual(antes);
   });
 
-  it("loja nova sem nome é recusada pelo banco", () =>
-    expect(como(db, U.analista, (q) =>
-      q("select importar_lojas('x.xlsx', 'lojas/x.xlsx', $1::jsonb)", [JSON.stringify([{ luc: "LJ 777", aluguel_minimo: "1.00", minimo_vigencia: "2026-11-01" }])]),
-    )).rejects.toThrow(/sem nome fantasia/));
+  it("loja nova sem nome é cadastrada com a LUC como nome; área e piso são gravados", async () => {
+    await comoConfirmando(db, U.analista, (q) =>
+      q("select importar_lojas('x.xlsx', 'lojas/x.xlsx', $1::jsonb)", [JSON.stringify([{ luc: "LJ 777", area_m2: "85.50", piso: "L2", aluguel_minimo: "1.00", minimo_vigencia: "2026-11-15" }])]));
+    const l = (await db.query("select nome_fantasia, area_m2::text a, piso from lojas where luc = 'LJ 777'")).rows[0];
+    expect(l).toEqual({ nome_fantasia: "LJ 777", a: "85.50", piso: "L2" });
+  });
 
   it("um erro em qualquer linha desfaz a importação inteira", async () => {
     const antes = (await db.query("select count(*)::int n from lojas")).rows[0].n;

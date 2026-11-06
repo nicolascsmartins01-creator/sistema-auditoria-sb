@@ -86,6 +86,6 @@ describe("descrição da trilha", () => {
     expect(d).toEqual({ titulo: "Loja alterada", detalhes: ["Nome fantasia: A → B", "Ativa: Sim → Não"] });
     const p = descreverRegistro({ ...base, acao: "INSERT", tabela: "loja_percentuais", importacao_id: "i",
       dados_anteriores: null, dados_novos: { percentual: 6.5, vigencia_inicio: "2026-09-01", loja_id: "l" } });
-    expect(p).toEqual({ titulo: "Percentual cadastrado (via importação de planilha)", detalhes: ["Percentual: 6,50%", "Início da vigência: 09/2026"] });
+    expect(p).toEqual({ titulo: "Percentual cadastrado (via importação de planilha)", detalhes: ["Percentual: 6,50%", "Início da vigência: 01/09/2026"] });
   });
 });

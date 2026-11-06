@@ -89,7 +89,7 @@ export function lerNumeroBR(valor: unknown): number | null {
   if (valor === null || valor === undefined) return null;
   if (typeof valor === "number") return Number.isFinite(valor) ? valor : NaN;
   let s = String(valor).replace(/[ \s]/g, "").replace(/^R\$/i, "").replace(/%$/, "");
-  if (s === "") return null;
+  if (s === "" || VAZIOS.has(s.toLowerCase())) return null;
   let negativo = false;
   if (s.startsWith("-")) { negativo = true; s = s.slice(1); }
   let n: number;
@@ -135,6 +135,61 @@ export function lerMesAno(valor: unknown): { ok: true; data: string } | { ok: fa
   if (mes < 1 || mes > 12 || ano < 2000 || ano > 2100) return invalido;
   if (dia !== 1) return { ok: false, erro: "a vigência deve começar no dia 1º do mês" };
   return { ok: true, data: `${ano}-${String(mes).padStart(2, "0")}-01` };
+}
+
+/** Marcas usadas em planilhas para "sem valor". */
+const VAZIOS = new Set(["-", "--", "—", "–", "n/a", "na", "n/d", "nd", "s/n", "s/v", "*"]);
+
+/** Célula de planilha sem informação útil (vazia, "-", "n/a"...). */
+export function celulaVazia(valor: unknown): boolean {
+  if (valor === null || valor === undefined) return true;
+  const s = String(valor).replace(/ /g, " ").trim();
+  return s === "" || VAZIOS.has(s.toLowerCase());
+}
+
+function dataValida(a: number, m: number, d: number): string | null {
+  if (a < 100) a += 2000;
+  if (a < 2000 || a > 2100 || m < 1 || m > 12 || d < 1) return null;
+  const dt = new Date(Date.UTC(a, m - 1, d));
+  if (dt.getUTCMonth() !== m - 1) return null;
+  return `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
+ * Lê a data de início de uma vigência (qualquer dia) e devolve "aaaa-mm-dd".
+ * Aceita: datas do Excel (inclusive o número de série, ex.: 45366), "15/03/2024",
+ * "15/03/24", "15-03-2024", "15.03.2024", "2024-03-15", "03/2024" (dia 1º),
+ * "mar/2024", "março de 2024" e períodos ("15/03/2024 a 14/03/2029": usa o início).
+ */
+export function lerDataVigencia(valor: unknown): { ok: true; data: string } | { ok: false; erro: string } {
+  const invalido = { ok: false as const, erro: `data não reconhecida ("${String(valor ?? "").trim().slice(0, 40)}")` };
+  if (celulaVazia(valor)) return { ok: false, erro: "vazio" };
+  const ok = (r: string | null) => (r ? { ok: true as const, data: r } : invalido);
+  if (valor instanceof Date) {
+    if (Number.isNaN(valor.getTime())) return invalido;
+    // O Excel guarda datas sem fuso; o leitor devolve meia-noite UTC (às vezes alguns segundos antes).
+    const d = new Date(valor.getTime() + 12 * 3600 * 1000);
+    return ok(dataValida(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+  }
+  if (typeof valor === "number") {
+    if (!Number.isFinite(valor) || valor < 20000 || valor > 80000) return invalido; // número de série do Excel
+    const d = new Date(Date.UTC(1899, 11, 30) + Math.round(valor) * 86400000);
+    return ok(dataValida(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()));
+  }
+  const s = String(valor).replace(/ /g, " ").trim().toLowerCase();
+  let m: RegExpExecArray | null;
+  // primeira data completa do texto (cobre também períodos "início a fim")
+  if ((m = /(?<!\d)(\d{4})-(\d{1,2})-(\d{1,2})(?!\d)/.exec(s))) return ok(dataValida(+m[1], +m[2], +m[3]));
+  if ((m = /(?<!\d)(\d{1,2})\s*[/.-]\s*(\d{1,2})\s*[/.-]\s*(\d{4}|\d{2})(?!\d)/.exec(s))) return ok(dataValida(+m[3], +m[2], +m[1]));
+  if ((m = /^(\d{1,2})\s*[/.-]\s*(\d{4})$/.exec(s))) return ok(dataValida(+m[2], +m[1], 1));
+  if ((m = /^(\d{4})-(\d{1,2})$/.exec(s))) return ok(dataValida(+m[1], +m[2], 1));
+  if ((m = /^([a-zà-ú]{3,9})\.?\s*(?:de\s+|[/.\- ]\s*)(\d{4}|\d{2})$/.exec(s))) {
+    const nome = m[1].normalize("NFD").replace(/[̀-ͯ]/g, "");
+    const idx = MESES_ABREV.findIndex((a) => nome.startsWith(a));
+    return idx < 0 ? invalido : ok(dataValida(+m[2], idx + 1, 1));
+  }
+  if (/^\d+(\.\d+)?$/.test(s)) return lerDataVigencia(Number(s));
+  return invalido;
 }
 
 /** "S", "Sim", "N", "Não", true/false. Vazio → null. Inválido → undefined. */

@@ -1,4 +1,4 @@
-import { formatarMesAno, formatarMoeda, formatarPercentual } from "@/lib/formato";
+import { formatarData, formatarMesAno, formatarMoeda, formatarPercentual } from "@/lib/formato";
 import { NOMES_PERFIL, type Perfil } from "@/lib/perfis";
 
 export interface RegistroTrilha {
@@ -34,7 +34,7 @@ const FEMININO = new Set(["lojas", "importacoes", "lancamento_fotos", "vendas_in
 const flex = (tabela: string, masc: string) => (FEMININO.has(tabela) ? masc.replace(/o$/, "a") : masc);
 
 const ROTULOS_CAMPO: Record<string, string> = {
-  luc: "LUC", nome_fantasia: "Nome fantasia", localizacao: "Localização", segmento_id: "Segmento",
+  luc: "LUC", nome_fantasia: "Nome fantasia", area_m2: "Área (m²)", piso: "Piso", localizacao: "Localização", segmento_id: "Segmento",
   auditada: "Auditada", ativa: "Ativa", ativo: "Ativo", percentual: "Percentual", valor: "Valor",
   vigencia_inicio: "Início da vigência", ano: "Ano", nome: "Nome", perfil: "Perfil", login: "Login",
   arquivo_nome: "Arquivo",
@@ -57,7 +57,7 @@ function formatarCampo(campo: string, v: unknown, ctx: Contexto): string {
   if (campo === "tipo") return ({ automatico: "fechamento automático", antecipado: "fechamento antecipado", refechamento: "refechamento", lojas: "planilha de lojas", portal: "PDF do portal" } as Record<string, string>)[String(v)] ?? String(v);
   if (campo === "data") return String(v).split("-").reverse().join("/");
   if (campo === "caminho") return "foto anexada";
-  if (campo === "vigencia_inicio") return formatarMesAno(String(v));
+  if (campo === "vigencia_inicio") return formatarData(String(v));
   if (campo === "segmento_id") return ctx.segmentos?.get(Number(v)) ?? `#${v}`;
   if (campo === "perfil") return NOMES_PERFIL[v as Perfil] ?? String(v);
   return String(v);

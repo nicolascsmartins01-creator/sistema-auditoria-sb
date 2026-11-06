@@ -9,6 +9,7 @@ export interface LinhaLoja {
   id: string;
   luc: string;
   nome_fantasia: string;
+  piso?: string | null;
   localizacao: string | null;
   segmento: string | null;
   auditada: boolean;
@@ -92,7 +93,7 @@ export function ListaLojas({ lojas, segmentos, mostrarValores, anoAtual, filtros
                   {mostrarValores && l.aDefinir && <Etiqueta cor="amarelo">vigência a definir</Etiqueta>}
                 </p>
                 <p className="text-sm text-gray-500">
-                  {l.luc}{l.localizacao ? ` · ${l.localizacao}` : ""}{l.segmento ? ` · ${l.segmento}` : ""}
+                  {l.luc}{l.piso ? ` · Piso ${l.piso}` : ""}{l.localizacao ? ` · ${l.localizacao}` : ""}{l.segmento ? ` · ${l.segmento}` : ""}
                 </p>
               </div>
               {mostrarValores && (

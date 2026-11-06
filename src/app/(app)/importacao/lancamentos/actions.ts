@@ -55,7 +55,7 @@ export async function processarLote(anterior: EstadoLote, f: FormData): Promise<
   const versao = anterior.versao + 1;
   const arquivo = f.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) return { etapa: "inicio", versao, erro: "Escolha o arquivo da planilha." };
-  if (arquivo.size > LIMITE_BYTES) return { etapa: "inicio", versao, erro: "Arquivo muito grande (limite de 5 MB)." };
+  if (arquivo.size > LIMITE_BYTES) return { etapa: "inicio", versao, erro: "Arquivo muito grande (limite de 4 MB). Apague abas e colunas que não serão usadas, ou salve como .csv." };
   const conteudo = await arquivo.arrayBuffer();
   let matriz: Celula[][];
   try { matriz = await lerPlanilha(arquivo.name, conteudo); } catch (e) { return { etapa: "inicio", versao, erro: (e as Error).message }; }

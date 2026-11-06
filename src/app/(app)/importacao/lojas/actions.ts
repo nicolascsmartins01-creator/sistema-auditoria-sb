@@ -24,15 +24,17 @@ export interface EstadoImportacao {
   resumo?: { lojas_criadas: number; lojas_atualizadas: number; vigencias_gravadas: number; alugueis_13_gravados: number };
 }
 
-const CHAVES = ["luc", "nome_fantasia", "localizacao", "segmento", "auditada", "ativa", "percentual",
-  "percentual_vigencia", "aluguel_minimo", "minimo_vigencia", "ano_13", "valor_13"] as const;
+const CHAVES = ["luc", "nome_fantasia", "area", "piso", "localizacao", "segmento", "auditada", "ativa", "vigencia",
+  "percentual", "percentual_vigencia", "aluguel_minimo", "minimo_vigencia", "ano_13", "valor_13"] as const;
+const DATA = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const esquemaMapeamento = z.object({
-  linhaCabecalho: z.number().int().min(0).max(50),
+  linhaCabecalho: z.number().int().min(0).max(100),
   colunas: z.partialRecord(z.enum(CHAVES), z.number().int().min(0).max(500)),
   fixos: z.object({
-    percentual_vigencia: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
-    minimo_vigencia: z.string().regex(/^\d{4}-\d{2}-01$/).optional(),
+    vigencia: DATA.optional(),
+    percentual_vigencia: DATA.optional(),
+    minimo_vigencia: DATA.optional(),
     ano_13: z.number().int().min(2000).max(2100).optional(),
   }).optional(),
 });
@@ -40,7 +42,7 @@ const esquemaMapeamento = z.object({
 async function lerArquivo(f: FormData): Promise<{ erro: string } | { arquivo: File; conteudo: ArrayBuffer; matriz: Celula[][] }> {
   const arquivo = f.get("arquivo");
   if (!(arquivo instanceof File) || arquivo.size === 0) return { erro: "Escolha o arquivo da planilha." };
-  if (arquivo.size > LIMITE_BYTES) return { erro: "Arquivo muito grande (limite de 5 MB)." };
+  if (arquivo.size > LIMITE_BYTES) return { erro: "Arquivo muito grande (limite de 4 MB). Apague abas e colunas que não serão usadas, ou salve como .csv." };
   const conteudo = await arquivo.arrayBuffer();
   try {
     return { arquivo, conteudo, matriz: await lerPlanilha(arquivo.name, conteudo) };
@@ -89,7 +91,7 @@ export async function processarImportacao(anterior: EstadoImportacao, f: FormDat
 
   if (passo !== "confirmar") return { etapa: "inicio", versao, erro: "Passo desconhecido." };
   if (!resultado.podeImportar) {
-    return { etapa: "previa", versao, arquivo: nome, resultado, erro: "A planilha tem pendências e não pode ser importada." };
+    return { etapa: "previa", versao, arquivo: nome, resultado, erro: "Não há o que importar. Confira a escolha de colunas." };
   }
   const nomeSeguro = nome.normalize("NFD").replace(/[^\w.-]+/g, "_").slice(-80);
   const caminho = `lojas/${hojeFortaleza()}/${crypto.randomUUID()}-${nomeSeguro}`;

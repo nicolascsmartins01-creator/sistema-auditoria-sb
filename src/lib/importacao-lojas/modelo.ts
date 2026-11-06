@@ -26,7 +26,9 @@ export async function gerarModeloLojas(): Promise<Buffer> {
   inst.addRow([]);
   inst.addRow(["Observações", "", "As duas linhas da aba Lojas são exemplos fictícios: apague-as antes de preencher."]);
   inst.addRow(["", "", "Uma linha por loja. Se a LUC já existir no cadastro, a loja será atualizada; se não existir, será criada."]);
-  inst.addRow(["", "", "Percentual e aluguel mínimo entram como nova vigência a partir do mês informado; vigências anteriores são mantidas."]);
+  inst.addRow(["", "", "Percentual e aluguel mínimo entram como nova vigência a partir da data informada (qualquer dia); vigências anteriores são mantidas."]);
+  inst.addRow(["", "", "Uma vigência que começa no meio do mês já vale para o mês inteiro no cálculo do aluguel."]);
+  inst.addRow(["", "", "Informação faltando não impede a importação: a loja é cadastrada e você completa depois."]);
   inst.addRow(["", "", "Também é aceito arquivo .csv (separado por ponto e vírgula) com os mesmos títulos de coluna."]);
   inst.getColumn(3).alignment = { wrapText: true, vertical: "top" };
 

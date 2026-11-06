@@ -130,7 +130,13 @@ Confirmadas com o setor comercial:
   for o próprio dia 5, o mês fecha às 23:59 do dia 5, sem período de revisão; o
   Analista/Administrador pode reabrir (com motivo) se precisar revisar.
 - **Importação de lojas:** o usuário escolhe qual coluna da planilha corresponde a
-  cada campo; campo não escolhido não é lido nem alterado.
+  cada campo (Loja, LUC, área, piso, segmento, vigência, aluguel percentual, aluguel
+  mínimo, 13º); campo não escolhido não é lido nem alterado. Informação faltando ou
+  ilegível **não impede** a importação: vira aviso e a loja é cadastrada (sem nome → a LUC
+  vira o nome). Linhas de título de grupo e de total são ignoradas.
+- **Vigência em qualquer dia:** percentual e aluguel mínimo podem começar em qualquer dia.
+  No cálculo mensal vale a vigência iniciada até o último dia do mês (início em 15/09 já
+  vale para setembro inteiro).
 - Lançamento feito sem internet vale pela **hora em que foi digitado** no aparelho,
   mesmo que chegue ao servidor depois do prazo (regra a implementar na Fase 2).
 
@@ -140,7 +146,7 @@ Tabela de decisões (confirmadas e provisórias):
 |---|---|---|
 | Login | nome de usuário (ex.: `joao.silva`) ou e-mail; senha redefinida pelo Administrador | sim |
 | LUC | única entre lojas **ativas** (LUC de loja que saiu pode ser reaproveitada) | sim |
-| Vigências | sempre a partir do dia 1º de um mês; percentual único — **confirmado: não existe percentual escalonado** | — |
+| Vigências | início em qualquer dia (vale para o mês inteiro); percentual único — **confirmado: não existe percentual escalonado** | — |
 | 13º não cadastrado | **confirmado: usa o aluguel mínimo padrão** (o sistema apenas sinaliza a falta) | — |
 | Auditor | vê todas as lojas auditadas (sem designação por auditor) | sim |
 | Planilha de lojas | colunas do modelo próprio; reimportar atualiza a loja pela LUC | sim |

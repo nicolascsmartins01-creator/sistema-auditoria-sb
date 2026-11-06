@@ -5,16 +5,20 @@
  */
 import { COLUNAS, mapearCabecalho, type ChaveColuna } from "./colunas";
 import type { Celula } from "./ler-planilha";
+import { celulaVazia, formatarData } from "@/lib/formato";
+
+export type CampoFixo = "vigencia" | "percentual_vigencia" | "minimo_vigencia" | "ano_13";
 
 export interface Mapeamento {
   /** Índice (0 = primeira linha) da linha de títulos na planilha. */
   linhaCabecalho: number;
-  /** Campo do sistema → índice da coluna na planilha (0 = coluna A). */
+  /** Campo do sistema → índice da coluna na planilha (0 = coluna A). Dois campos podem usar a mesma coluna. */
   colunas: Partial<Record<ChaveColuna, number>>;
   /** Valores fixos para todas as linhas, quando a planilha não tem a coluna. */
   fixos?: {
-    percentual_vigencia?: string; // "aaaa-mm-01"
-    minimo_vigencia?: string;     // "aaaa-mm-01"
+    vigencia?: string;            // "aaaa-mm-dd"
+    percentual_vigencia?: string; // "aaaa-mm-dd"
+    minimo_vigencia?: string;     // "aaaa-mm-dd"
     ano_13?: number;
   };
 }
@@ -32,21 +36,38 @@ export function letraColuna(i: number): string {
   return s;
 }
 
-const vazio = (c: Celula | undefined) => c === null || c === undefined || String(c).trim() === "";
+const vazio = (c: Celula | undefined) => celulaVazia(c);
 
 function textoExemplo(c: Celula | undefined): string {
   if (vazio(c)) return "";
-  if (c instanceof Date) return c.toISOString().slice(0, 10).split("-").reverse().join("/");
+  if (c instanceof Date) {
+    const d = new Date(c.getTime() + 12 * 3600 * 1000);
+    return d.toISOString().slice(0, 10).split("-").reverse().join("/");
+  }
   return String(c).trim().slice(0, 40);
+}
+
+/** Quantas linhas do topo são examinadas à procura da linha de títulos. */
+const LINHAS_TOPO = 30;
+
+/** Acha a linha de títulos: a que tem a LUC e mais títulos reconhecidos entre as primeiras linhas. */
+export function acharLinhaCabecalho(matriz: Celula[][]): number {
+  let melhor = -1, pontos = 0;
+  matriz.slice(0, LINHAS_TOPO).forEach((l, i) => {
+    const m = mapearCabecalho(l);
+    const p = Object.keys(m.indice).length + (m.indice.luc !== undefined ? 10 : 0);
+    if (p > pontos) { melhor = i; pontos = p; }
+  });
+  if (melhor >= 0 && pontos >= 2) return melhor;
+  // nada reconhecido: primeira linha com 2+ células preenchidas (o usuário escolhe as colunas)
+  return matriz.slice(0, LINHAS_TOPO).findIndex((l) => l.filter((c) => !vazio(c)).length >= 2);
 }
 
 /** Lê os títulos da planilha e sugere a correspondência pelos nomes das colunas. */
 export function analisarCabecalho(matriz: Celula[][]):
   | { ok: true; linhaCabecalho: number; colunas: ColunaPlanilha[]; sugestao: Mapeamento; totalLinhas: number }
   | { ok: false; erro: string } {
-  const primeiras = matriz.slice(0, 10);
-  let idx = primeiras.findIndex((l) => mapearCabecalho(l).indice.luc !== undefined);
-  if (idx < 0) idx = primeiras.findIndex((l) => l.filter((c) => !vazio(c)).length >= 2);
+  const idx = acharLinhaCabecalho(matriz);
   if (idx < 0) return { ok: false, erro: "Não encontrei a linha de títulos das colunas. Confira se a planilha não está vazia." };
 
   const titulos = matriz[idx];
@@ -59,7 +80,7 @@ export function analisarCabecalho(matriz: Celula[][]):
     colunas.push({
       indice: i,
       letra: letraColuna(i),
-      titulo: vazio(titulos[i]) ? "(sem título)" : String(titulos[i]).trim(),
+      titulo: vazio(titulos[i]) ? "(sem título)" : String(titulos[i]).replace(/\s+/g, " ").trim(),
       exemplos,
     });
   }
@@ -74,65 +95,74 @@ export function analisarCabecalho(matriz: Celula[][]):
 }
 
 export const TITULO_CAMPO: Record<ChaveColuna, string> = Object.fromEntries(
-  COLUNAS.map((c) => [c.chave, c.titulo.replace(/\s*\(mm\/aaaa\)/, "")]),
+  COLUNAS.map((c) => [c.chave, c.titulo.replace(/\s*\((mm\/aaaa|dd\/mm\/aaaa)\)/, "")]),
 ) as Record<ChaveColuna, string>;
 
-/** Confere se a escolha de colunas faz sentido. Devolve a lista de problemas (vazia = ok). */
+/** Confere se a escolha de colunas permite importar. Devolve a lista de problemas (vazia = ok). */
 export function validarMapeamento(m: Mapeamento): string[] {
   const erros: string[] = [];
-  const c = m.colunas;
   const f = m.fixos ?? {};
-  const tem = (k: ChaveColuna) => c[k] !== undefined;
-  if (!tem("luc")) erros.push("Escolha a coluna da LUC (é ela que identifica a loja).");
-  const outros = (Object.keys(c) as ChaveColuna[]).filter((k) => k !== "luc");
-  const temFixoUtil = (tem("percentual") && f.percentual_vigencia) || (tem("aluguel_minimo") && f.minimo_vigencia) || (tem("valor_13") && f.ano_13);
-  if (!outros.length && !temFixoUtil) erros.push("Escolha pelo menos um campo para ler e atualizar além da LUC.");
-
-  const usadas = new Map<number, ChaveColuna>();
-  for (const [k, i] of Object.entries(c) as [ChaveColuna, number][]) {
-    if (usadas.has(i)) erros.push(`A mesma coluna foi escolhida para "${TITULO_CAMPO[usadas.get(i)!]}" e "${TITULO_CAMPO[k]}".`);
-    else usadas.set(i, k);
-  }
-
-  // Valor sem vigência é permitido: fica com "vigência a definir" na loja.
-  const par = (valor: ChaveColuna, vig: "percentual_vigencia" | "minimo_vigencia", nome: string) => {
-    if (!tem(valor) && tem(vig)) erros.push(`${nome}: foi escolhida a coluna de vigência, mas não a do valor.`);
-  };
-  par("percentual", "percentual_vigencia", "Percentual");
-  par("aluguel_minimo", "minimo_vigencia", "Aluguel mínimo");
-  const temAno = tem("ano_13") || Boolean(f.ano_13);
-  if (tem("valor_13") && !temAno) erros.push("13º aluguel: escolha a coluna do ano ou um ano fixo para todas as linhas.");
-  if (!tem("valor_13") && tem("ano_13")) erros.push("13º aluguel: foi escolhida a coluna do ano, mas não a do valor.");
+  if (m.colunas.luc === undefined) erros.push("Escolha a coluna da LUC (é ela que identifica a loja).");
+  const outros = (Object.keys(m.colunas) as ChaveColuna[]).filter((k) => k !== "luc");
+  if (!outros.length && !Object.values(f).some(Boolean)) erros.push("Escolha pelo menos um campo para ler além da LUC.");
   return erros;
+}
+
+export type FonteVigencia = { tipo: "coluna"; indice: number } | { tipo: "fixa"; data: string };
+
+/**
+ * De onde vem a vigência do percentual/mínimo, em ordem de prioridade: coluna própria,
+ * data fixa própria, coluna geral "Vigência", data fixa geral. Numa linha, a primeira
+ * fonte com valor é usada (coluna própria vazia → cai na coluna geral).
+ */
+export function fontesVigencia(m: Mapeamento, campo: "percentual_vigencia" | "minimo_vigencia"): FonteVigencia[] {
+  const f = m.fixos ?? {};
+  const fontes: FonteVigencia[] = [];
+  if (m.colunas[campo] !== undefined) fontes.push({ tipo: "coluna", indice: m.colunas[campo]! });
+  if (f[campo]) fontes.push({ tipo: "fixa", data: f[campo]! });
+  if (m.colunas.vigencia !== undefined) fontes.push({ tipo: "coluna", indice: m.colunas.vigencia });
+  if (f.vigencia) fontes.push({ tipo: "fixa", data: f.vigencia });
+  return fontes;
+}
+
+/** Fonte principal (para descrever a escolha na tela). */
+export function origemVigencia(m: Mapeamento, campo: "percentual_vigencia" | "minimo_vigencia"): FonteVigencia | { tipo: "nenhuma" } {
+  return fontesVigencia(m, campo)[0] ?? { tipo: "nenhuma" };
 }
 
 /** Avisos (não impedem a importação) sobre a escolha de colunas. */
 export function avisosMapeamento(m: Mapeamento): string[] {
   const a: string[] = [];
-  const f = m.fixos ?? {};
-  if (m.colunas.percentual !== undefined && m.colunas.percentual_vigencia === undefined && !f.percentual_vigencia)
-    a.push("Percentual sem início de vigência: será gravado como “vigência a definir” e o mês poderá ser informado depois na página da loja.");
-  if (m.colunas.aluguel_minimo !== undefined && m.colunas.minimo_vigencia === undefined && !f.minimo_vigencia)
-    a.push("Aluguel mínimo sem início de vigência: será gravado como “vigência a definir” e o mês poderá ser informado depois na página da loja.");
+  if (m.colunas.percentual !== undefined && origemVigencia(m, "percentual_vigencia").tipo === "nenhuma")
+    a.push("Percentual sem vigência: será gravado como “vigência a definir” (informe a data depois na página da loja).");
+  if (m.colunas.aluguel_minimo !== undefined && origemVigencia(m, "minimo_vigencia").tipo === "nenhuma")
+    a.push("Aluguel mínimo sem vigência: será gravado como “vigência a definir” (informe a data depois na página da loja).");
+  if (m.colunas.valor_13 !== undefined && m.colunas.ano_13 === undefined && !m.fixos?.ano_13)
+    a.push("13º aluguel sem o ano: os valores do 13º não serão lidos. Escolha a coluna do ano ou um ano fixo.");
   return a;
 }
 
 /** Lista legível dos campos que serão lidos e atualizados. */
 export function descreverMapeamento(m: Mapeamento): string[] {
-  const f = m.fixos ?? {};
-  const fmtMes = (d: string) => `${d.slice(5, 7)}/${d.slice(0, 4)}`;
-  return COLUNAS.filter((col) => m.colunas[col.chave] !== undefined || (col.chave === "percentual_vigencia" && f.percentual_vigencia && m.colunas.percentual !== undefined)
-    || (col.chave === "minimo_vigencia" && f.minimo_vigencia && m.colunas.aluguel_minimo !== undefined)
-    || (col.chave === "ano_13" && f.ano_13 && m.colunas.valor_13 !== undefined))
-    .map((col) => {
-      const i = m.colunas[col.chave];
-      if (i !== undefined) return `${TITULO_CAMPO[col.chave]} ← coluna ${letraColuna(i)}`;
-      if (col.chave === "percentual_vigencia") return `${TITULO_CAMPO[col.chave]}: ${fmtMes(f.percentual_vigencia!)} para todas as linhas`;
-      if (col.chave === "minimo_vigencia") return `${TITULO_CAMPO[col.chave]}: ${fmtMes(f.minimo_vigencia!)} para todas as linhas`;
-      return `${TITULO_CAMPO[col.chave]}: ${f.ano_13} para todas as linhas`;
-    })
-    .concat(m.colunas.percentual !== undefined && m.colunas.percentual_vigencia === undefined && !f.percentual_vigencia
-      ? [`${TITULO_CAMPO.percentual_vigencia}: a definir depois`] : [])
-    .concat(m.colunas.aluguel_minimo !== undefined && m.colunas.minimo_vigencia === undefined && !f.minimo_vigencia
-      ? [`${TITULO_CAMPO.minimo_vigencia}: a definir depois`] : []);
+  const linhas: string[] = [];
+  for (const col of COLUNAS) {
+    const k = col.chave;
+    if (k === "percentual_vigencia" || k === "minimo_vigencia" || k === "vigencia") continue;
+    const i = m.colunas[k];
+    if (k === "ano_13") {
+      if (m.colunas.valor_13 === undefined) continue;
+      if (i !== undefined) linhas.push(`${TITULO_CAMPO[k]} ← coluna ${letraColuna(i)}`);
+      else if (m.fixos?.ano_13) linhas.push(`${TITULO_CAMPO[k]}: ${m.fixos.ano_13} para todas as linhas`);
+      continue;
+    }
+    if (i === undefined) continue;
+    linhas.push(`${TITULO_CAMPO[k]} ← coluna ${letraColuna(i)}`);
+    if (k === "percentual" || k === "aluguel_minimo") {
+      const o = origemVigencia(m, k === "percentual" ? "percentual_vigencia" : "minimo_vigencia");
+      const nome = k === "percentual" ? "Vigência do percentual" : "Vigência do aluguel mínimo";
+      linhas.push(o.tipo === "coluna" ? `${nome} ← coluna ${letraColuna(o.indice)}`
+        : o.tipo === "fixa" ? `${nome}: ${formatarData(o.data)} para todas as linhas` : `${nome}: a definir depois`);
+    }
+  }
+  return linhas;
 }

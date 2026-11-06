@@ -1,10 +1,11 @@
 import ExcelJS from "exceljs";
 import Papa from "papaparse";
+import { mapearCabecalho } from "./colunas";
 
 export type Celula = string | number | boolean | Date | null;
 
 export const LIMITE_LINHAS = 2000;
-export const LIMITE_BYTES = 5 * 1024 * 1024;
+export const LIMITE_BYTES = 4 * 1024 * 1024; // a hospedagem aceita envios de até 4,5 MB
 
 /**
  * Lê a primeira aba de um .xlsx ou um .csv e devolve as linhas como matriz.
@@ -14,10 +15,11 @@ export const LIMITE_BYTES = 5 * 1024 * 1024;
 export async function lerPlanilha(nomeArquivo: string, conteudo: ArrayBuffer): Promise<Celula[][]> {
   const nome = nomeArquivo.toLowerCase();
   if (nome.endsWith(".csv") || nome.endsWith(".txt")) return lerCsv(conteudo);
-  if (nome.endsWith(".xlsx")) return lerXlsx(conteudo);
+  if (nome.endsWith(".xlsx") || nome.endsWith(".xlsm")) return lerXlsx(conteudo);
   if (nome.endsWith(".xls")) {
-    throw new Error("Formato .xls (Excel antigo) não suportado. Salve como .xlsx ou .csv.");
+    throw new Error("Formato .xls (Excel antigo) não suportado. No Excel, use Arquivo → Salvar como → “Pasta de Trabalho do Excel (.xlsx)” e envie de novo.");
   }
+  if (nome.endsWith(".ods")) throw new Error("Arquivo do LibreOffice (.ods) não suportado. Salve como .xlsx e envie de novo.");
   throw new Error("Envie um arquivo .xlsx ou .csv.");
 }
 
@@ -43,8 +45,15 @@ async function lerXlsx(conteudo: ArrayBuffer): Promise<Celula[][]> {
   } catch {
     throw new Error("Não foi possível abrir o arquivo. Verifique se é um .xlsx válido.");
   }
-  const ws = wb.worksheets.find((w) => w.state === "visible") ?? wb.worksheets[0];
-  if (!ws) throw new Error("A planilha está vazia.");
+  // Escolhe a aba que tem a coluna LUC nas primeiras linhas; senão, a primeira aba visível com dados.
+  const abas = wb.worksheets.filter((w) => w.state === "visible" && w.actualRowCount > 0);
+  if (!abas.length) throw new Error("A planilha está vazia.");
+  const matrizes = abas.map(lerAba);
+  const comLuc = matrizes.find((m) => m.slice(0, 30).some((l) => mapearCabecalho(l).indice.luc !== undefined));
+  return comLuc ?? matrizes[0];
+}
+
+function lerAba(ws: ExcelJS.Worksheet): Celula[][] {
   const linhas: Celula[][] = [];
   ws.eachRow({ includeEmpty: true }, (row, numero) => {
     const valores: Celula[] = [];
@@ -68,6 +77,7 @@ function valorDaCelula(cell: ExcelJS.Cell): Celula {
     else if ("richText" in o) v = (o.richText as { text: string }[]).map((t) => t.text).join("");
     else if ("text" in o) v = o.text;                      // hyperlink
     else if ("error" in o) return null;
+    if (v && typeof v === "object" && !(v instanceof Date) && "error" in (v as object)) return null; // fórmula com erro (#N/D...)
   }
   if (typeof v === "number") {
     const fmt = cell.numFmt ?? "";

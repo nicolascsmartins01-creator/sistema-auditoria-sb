@@ -5,7 +5,7 @@ import type { LojaCadastrada } from "@/lib/importacao-lojas/validar";
 /** Cadastro atual completo (lojas + vigências + 13º) para comparar com a planilha. */
 export async function carregarCadastroParaImportacao(sb: SupabaseClient): Promise<LojaCadastrada[]> {
   const [lojas, pcts, mins, dez] = await Promise.all([
-    sb.from("lojas").select("id, luc, nome_fantasia, localizacao, auditada, ativa, atualizado_em, segmentos(nome)").order("atualizado_em", { ascending: false }),
+    sb.from("lojas").select("id, luc, nome_fantasia, area_m2, piso, localizacao, auditada, ativa, atualizado_em, segmentos(nome)").order("atualizado_em", { ascending: false }),
     sb.from("loja_percentuais").select("loja_id, vigencia_inicio, percentual"),
     sb.from("loja_alugueis_minimos").select("loja_id, vigencia_inicio, valor"),
     sb.from("loja_aluguel_dezembro").select("loja_id, ano, valor"),
@@ -19,6 +19,7 @@ export async function carregarCadastroParaImportacao(sb: SupabaseClient): Promis
   const gp = agrupar(pcts.data!), gm = agrupar(mins.data!), gd = agrupar(dez.data!);
   return lojas.data!.map((l) => ({
     id: l.id, luc: l.luc, nome_fantasia: l.nome_fantasia, localizacao: l.localizacao,
+    area_m2: l.area_m2 === null ? null : Number(l.area_m2), piso: l.piso,
     segmento: (l.segmentos as unknown as { nome: string } | null)?.nome ?? null,
     auditada: l.auditada, ativa: l.ativa,
     percentuais: (gp.get(l.id) ?? []).map((p) => ({ vigencia_inicio: p.vigencia_inicio, percentual: Number(p.percentual) })),

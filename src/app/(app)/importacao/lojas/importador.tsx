@@ -7,7 +7,6 @@ import { processarImportacao, type EstadoImportacao } from "./actions";
 import type { ResultadoLinha, Situacao } from "@/lib/importacao-lojas/validar";
 import { avisosMapeamento, TITULO_CAMPO, validarMapeamento, type ColunaPlanilha, type Mapeamento } from "@/lib/importacao-lojas/mapeamento";
 import type { ChaveColuna } from "@/lib/importacao-lojas/colunas";
-import { MESES } from "@/lib/formato";
 
 const INICIAL: EstadoImportacao = { etapa: "inicio", versao: 0 };
 const NOMES: Record<Situacao, string> = { nova: "Nova", atualizacao: "Atualização", sem_alteracao: "Sem alteração", erro: "Erro" };
@@ -24,7 +23,8 @@ export function Importador() {
   const [mapa, setMapa] = useState<Mapeamento | null>(null);
   const [colunas, setColunas] = useState<ColunaPlanilha[]>([]);
   const [tela, setTela] = useState<Tela>("arquivo");
-  const [filtro, setFiltro] = useState<Situacao | "todas">("todas");
+  const [erroArquivo, setErroArquivo] = useState<string | null>(null);
+  const [filtro, setFiltro] = useState<Situacao | "todas" | "avisos">("todas");
 
   useEffect(() => {
     if (estado.etapa === "mapeamento" && estado.sugestao && estado.colunas) {
@@ -72,9 +72,14 @@ export function Importador() {
       {/* 1. arquivo */}
       <div className="space-y-3">
         <input type="file" name="arquivo" aria-label="Arquivo da planilha"
-          accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
+          accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
           className={`${classesInput} py-2`}
-          onChange={(e) => { setArquivo(e.target.files?.[0] ?? null); setTela("arquivo"); setMapa(null); }} />
+          onChange={(e) => {
+            const a = e.target.files?.[0] ?? null;
+            setErroArquivo(a && a.size > 4 * 1024 * 1024 ? "Arquivo muito grande (limite de 4 MB). Apague abas e colunas que não serão usadas, ou salve como .csv." : null);
+            setArquivo(a && a.size <= 4 * 1024 * 1024 ? a : null); setTela("arquivo"); setMapa(null);
+          }} />
+        {erroArquivo && <Aviso tipo="erro">{erroArquivo}</Aviso>}
         {tela === "arquivo" && (
           <Botao type="button" disabled={!arquivo || pendente} onClick={() => enviar("ler")}>
             {pendente ? "Lendo…" : "Ler colunas da planilha"}
@@ -115,12 +120,12 @@ function Passos({ atual }: { atual: Tela }) {
 
 const GRUPOS: { titulo: string; campos: ChaveColuna[] }[] = [
   { titulo: "Identificação", campos: ["luc"] },
-  { titulo: "Cadastro", campos: ["nome_fantasia", "localizacao", "segmento", "auditada", "ativa"] },
-  { titulo: "Percentual de participação", campos: ["percentual", "percentual_vigencia"] },
-  { titulo: "Aluguel mínimo", campos: ["aluguel_minimo", "minimo_vigencia"] },
+  { titulo: "Cadastro", campos: ["nome_fantasia", "area", "piso", "segmento", "localizacao", "auditada", "ativa"] },
+  { titulo: "Contrato", campos: ["vigencia", "percentual", "aluguel_minimo"] },
+  { titulo: "Vigências separadas (só se o percentual e o mínimo tiverem datas diferentes)", campos: ["percentual_vigencia", "minimo_vigencia"] },
   { titulo: "13º aluguel", campos: ["valor_13", "ano_13"] },
 ];
-const CAMPO_FIXO: Partial<Record<ChaveColuna, "mes" | "ano">> = { percentual_vigencia: "mes", minimo_vigencia: "mes", ano_13: "ano" };
+const CAMPO_FIXO: Partial<Record<ChaveColuna, "data" | "ano">> = { vigencia: "data", percentual_vigencia: "data", minimo_vigencia: "data", ano_13: "ano" };
 const NAO_LER = "";
 const FIXO = "fixo";
 
@@ -131,7 +136,7 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
   const problemas = validarMapeamento(mapa);
   const hoje = new Date();
   const anoAtual = hoje.getFullYear();
-  const mesPadrao = `${anoAtual}-${String(hoje.getMonth() + 1).padStart(2, "0")}-01`;
+  const dataPadrao = `${anoAtual}-${String(hoje.getMonth() + 1).padStart(2, "0")}-01`;
 
   function valorSelect(c: ChaveColuna): string {
     if (mapa.colunas[c] !== undefined) return String(mapa.colunas[c]);
@@ -144,7 +149,7 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
     const fixos = { ...(mapa.fixos ?? {}) } as Record<string, string | number | undefined>;
     delete colunasNovas[c];
     delete fixos[c];
-    if (v === FIXO) fixos[c] = CAMPO_FIXO[c] === "ano" ? anoAtual : mesPadrao;
+    if (v === FIXO) fixos[c] = CAMPO_FIXO[c] === "ano" ? anoAtual : dataPadrao;
     else if (v !== NAO_LER) colunasNovas[c] = Number(v);
     setMapa({ ...mapa, colunas: colunasNovas, fixos: fixos as Mapeamento["fixos"] });
   }
@@ -160,6 +165,7 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
       <Aviso tipo="info">
         Escolha, para cada campo do sistema, a coluna da sua planilha que tem essa informação.
         Campo marcado como <strong>“não ler / não atualizar”</strong> fica exatamente como está no cadastro.
+        Informação faltando ou que não der para entender não impede a importação: a loja é cadastrada e você completa depois.
         {totalLinhas !== undefined && <> A planilha tem <strong>{totalLinhas}</strong> linha(s) de dados.</>}
       </Aviso>
 
@@ -186,13 +192,14 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
                     <select id={`map-${c}`} value={v} onChange={(e) => mudar(c, e.target.value)}
                       className={`${classesInput} ${v === NAO_LER ? "text-gray-500" : "font-medium"}`}>
                       <option value={NAO_LER}>{c === "luc" ? "— escolha a coluna —" : "— não ler / não atualizar —"}</option>
-                      {CAMPO_FIXO[c] && <option value={FIXO}>{CAMPO_FIXO[c] === "ano" ? "Mesmo ano para todas as linhas…" : "Mesmo mês para todas as linhas…"}</option>}
+                      {CAMPO_FIXO[c] && <option value={FIXO}>{CAMPO_FIXO[c] === "ano" ? "Mesmo ano para todas as linhas…" : "Mesma data para todas as linhas…"}</option>}
                       {colunas.map((x) => <option key={x.indice} value={x.indice}>Coluna {x.letra} – {x.titulo}</option>)}
                     </select>
                     {col && col.exemplos.length > 0 && <p className="text-xs text-gray-500">Exemplos: {col.exemplos.join(" · ")}</p>}
-                    {v === FIXO && CAMPO_FIXO[c] === "mes" && (
-                      <SeletorMesFixo valor={String(mapa.fixos?.[c as "percentual_vigencia" | "minimo_vigencia"] ?? mesPadrao)}
-                        anoAtual={anoAtual} onChange={(d) => mudarFixo(c, d)} />
+                    {v === FIXO && CAMPO_FIXO[c] === "data" && (
+                      <input type="date" aria-label="Data de início da vigência" className={classesInput}
+                        value={String(mapa.fixos?.[c as "vigencia" | "percentual_vigencia" | "minimo_vigencia"] ?? dataPadrao)}
+                        onChange={(e) => e.target.value && mudarFixo(c, e.target.value)} />
                     )}
                     {v === FIXO && CAMPO_FIXO[c] === "ano" && (
                       <select aria-label="Ano fixo" value={mapa.fixos?.ano_13 ?? anoAtual} onChange={(e) => mudarFixo(c, Number(e.target.value))} className={classesInput}>
@@ -219,27 +226,11 @@ function EditorMapeamento({ colunas, mapa, setMapa, totalLinhas, pendente, onAna
   );
 }
 
-function SeletorMesFixo({ valor, anoAtual, onChange }: { valor: string; anoAtual: number; onChange: (d: string) => void }) {
-  const ano = Number(valor.slice(0, 4));
-  const mes = Number(valor.slice(5, 7));
-  const montar = (a: number, m: number) => `${a}-${String(m).padStart(2, "0")}-01`;
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      <select aria-label="Mês da vigência" value={mes} onChange={(e) => onChange(montar(ano, Number(e.target.value)))} className={classesInput}>
-        {MESES.map((m, i) => <option key={m} value={i + 1}>{String(i + 1).padStart(2, "0")} – {m}</option>)}
-      </select>
-      <select aria-label="Ano da vigência" value={ano} onChange={(e) => onChange(montar(Number(e.target.value), mes))} className={classesInput}>
-        {Array.from({ length: 6 }, (_, i) => anoAtual - 3 + i).map((a) => <option key={a}>{a}</option>)}
-      </select>
-    </div>
-  );
-}
-
 function Previa({ resultado: r, arquivo, filtro, setFiltro, pendente, onVoltar, onConfirmar }: {
-  resultado: NonNullable<EstadoImportacao["resultado"]>; arquivo: string; filtro: Situacao | "todas";
-  setFiltro: (s: Situacao | "todas") => void; pendente: boolean; onVoltar: () => void; onConfirmar: () => void;
+  resultado: NonNullable<EstadoImportacao["resultado"]>; arquivo: string; filtro: Situacao | "todas" | "avisos";
+  setFiltro: (s: Situacao | "todas" | "avisos") => void; pendente: boolean; onVoltar: () => void; onConfirmar: () => void;
 }) {
-  const linhas: ResultadoLinha[] = r.linhas.filter((l) => filtro === "todas" || l.situacao === filtro);
+  const linhas: ResultadoLinha[] = r.linhas.filter((l) => filtro === "todas" || (filtro === "avisos" ? l.avisos.length > 0 : l.situacao === filtro));
   return (
     <div className="space-y-4">
       <h3 className="text-lg font-semibold">Prévia: {arquivo}</h3>
@@ -254,10 +245,10 @@ function Previa({ resultado: r, arquivo, filtro, setFiltro, pendente, onVoltar, 
       {r.avisosGerais.map((e, i) => <Aviso key={i} tipo="alerta">{e}</Aviso>)}
 
       <div className="flex flex-wrap gap-2 text-sm">
-        {(["todas", "nova", "atualizacao", "sem_alteracao", "erro"] as const).map((s) => (
+        {(["todas", "nova", "atualizacao", "sem_alteracao", "avisos"] as const).filter((s) => s !== "avisos" || r.linhas.some((l) => l.avisos.length)).map((s) => (
           <button key={s} type="button" onClick={() => setFiltro(s)}
             className={`rounded-full border px-3 py-1.5 ${filtro === s ? "border-azul bg-azul text-white" : "bg-white"}`}>
-            {s === "todas" ? `Todas (${r.totais.linhas})` : `${NOMES[s]} (${r.totais[s]})`}
+            {s === "todas" ? `Todas (${r.totais.linhas})` : s === "avisos" ? `Com aviso (${r.linhas.filter((l) => l.avisos.length).length})` : `${NOMES[s]} (${r.totais[s]})`}
           </button>
         ))}
       </div>
@@ -284,13 +275,14 @@ function Previa({ resultado: r, arquivo, filtro, setFiltro, pendente, onVoltar, 
           <p className="flex-1 text-sm text-green-900">
             Serão gravadas {r.totais.nova} loja(s) nova(s) e {r.totais.atualizacao} atualização(ões).
             {r.totais.sem_alteracao > 0 && ` ${r.totais.sem_alteracao} linha(s) sem alteração serão ignoradas.`}
+            {r.linhas.some((l) => l.avisos.length) && " Os avisos não impedem a gravação: confira e complete depois na página da loja."}
           </p>
           <Botao type="button" disabled={pendente} onClick={onConfirmar}>{pendente ? "Gravando…" : "Confirmar importação"}</Botao>
         </div>
       ) : (
         <Aviso tipo="erro">
-          {r.totais.erro > 0 || r.errosGerais.length
-            ? "Corrija os erros (na planilha ou na escolha de colunas) e analise novamente. A importação é tudo ou nada: nenhuma linha é gravada enquanto houver erro."
+          {r.errosGerais.length
+            ? "Ajuste a escolha de colunas e analise novamente."
             : "Nada a importar: todas as linhas já estão iguais ao cadastro."}
         </Aviso>
       )}

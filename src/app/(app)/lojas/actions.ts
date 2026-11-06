@@ -5,15 +5,14 @@ import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { exigirUsuario, PERFIS_ADMIN, PERFIS_ANALISTA } from "@/lib/sessao";
 import { mensagemErroBanco, type EstadoAcao } from "@/lib/acoes";
-import { lerNumeroBR, normalizarLuc, paraDecimalBanco } from "@/lib/formato";
+import { lerDataVigencia, lerNumeroBR, normalizarLuc, paraDecimalBanco } from "@/lib/formato";
 
 const txt = (f: FormData, k: string) => String(f.get(k) ?? "").trim();
 
-function lerMesAnoForm(f: FormData): string | null {
-  const mes = Number(f.get("mes"));
-  const ano = Number(f.get("ano"));
-  if (!Number.isInteger(mes) || mes < 1 || mes > 12 || !Number.isInteger(ano) || ano < 2000 || ano > 2100) return null;
-  return `${ano}-${String(mes).padStart(2, "0")}-01`;
+/** Data de início da vigência (qualquer dia), campo "inicio" no formato aaaa-mm-dd. */
+function lerDataForm(f: FormData): string | null {
+  const v = lerDataVigencia(String(f.get("inicio") ?? ""));
+  return v.ok ? v.data : null;
 }
 
 export async function salvarLoja(id: string | null, _: EstadoAcao, f: FormData): Promise<EstadoAcao> {
@@ -22,6 +21,8 @@ export async function salvarLoja(id: string | null, _: EstadoAcao, f: FormData):
     luc: normalizarLuc(f.get("luc")),
     nome_fantasia: txt(f, "nome_fantasia"),
     localizacao: txt(f, "localizacao") || null,
+    piso: txt(f, "piso") || null,
+    area_m2: null as string | null,
     segmento_id: f.get("segmento_id") ? Number(f.get("segmento_id")) : null,
     auditada: f.get("auditada") === "on",
     ativa: f.get("ativa") === "on",
@@ -29,6 +30,9 @@ export async function salvarLoja(id: string | null, _: EstadoAcao, f: FormData):
   const erros: Record<string, string> = {};
   if (!dados.luc) erros.luc = "Informe a LUC.";
   if (!dados.nome_fantasia) erros.nome_fantasia = "Informe o nome fantasia.";
+  const area = lerNumeroBR(txt(f, "area_m2").replace(/m\s*[²2]?\s*$/i, "").trim());
+  if (area !== null && (Number.isNaN(area) || area < 0)) erros.area_m2 = "Área inválida (ex.: 120,50).";
+  else if (area !== null) dados.area_m2 = paraDecimalBanco(area, 2);
   if (Object.keys(erros).length) return { erros, mensagem: "Corrija os campos destacados." };
 
   const sb = await criarClienteServidor();
@@ -47,9 +51,9 @@ export async function salvarLoja(id: string | null, _: EstadoAcao, f: FormData):
 
 export async function salvarPercentual(lojaId: string, _: EstadoAcao, f: FormData): Promise<EstadoAcao> {
   await exigirUsuario(PERFIS_ANALISTA);
-  const vig = lerMesAnoForm(f);
+  const vig = lerDataForm(f);
   const p = lerNumeroBR(f.get("valor"));
-  if (!vig) return { mensagem: "Escolha o mês e o ano de início da vigência." };
+  if (!vig) return { mensagem: "Informe a data de início da vigência." };
   if (p === null || Number.isNaN(p) || p < 0 || p > 100) return { mensagem: "Informe um percentual entre 0 e 100 (ex.: 6,5)." };
   const sb = await criarClienteServidor();
   const { error } = await sb.from("loja_percentuais")
@@ -61,9 +65,9 @@ export async function salvarPercentual(lojaId: string, _: EstadoAcao, f: FormDat
 
 export async function salvarMinimo(lojaId: string, _: EstadoAcao, f: FormData): Promise<EstadoAcao> {
   await exigirUsuario(PERFIS_ANALISTA);
-  const vig = lerMesAnoForm(f);
+  const vig = lerDataForm(f);
   const v = lerNumeroBR(f.get("valor"));
-  if (!vig) return { mensagem: "Escolha o mês e o ano de início da vigência." };
+  if (!vig) return { mensagem: "Informe a data de início da vigência." };
   if (v === null || Number.isNaN(v) || v < 0) return { mensagem: "Informe o valor do aluguel mínimo (ex.: 12.500,00)." };
   const sb = await criarClienteServidor();
   const { error } = await sb.from("loja_alugueis_minimos")
@@ -103,12 +107,12 @@ export async function definirMesVigencia(
 ): Promise<EstadoAcao> {
   await exigirUsuario(PERFIS_ANALISTA);
   if (tabela !== "loja_percentuais" && tabela !== "loja_alugueis_minimos") return { mensagem: "Operação inválida." };
-  const vig = lerMesAnoForm(f);
-  if (!vig) return { mensagem: "Escolha o mês e o ano." };
+  const vig = lerDataForm(f);
+  if (!vig) return { mensagem: "Informe a data." };
   const sb = await criarClienteServidor();
   const { data, error } = await sb.from(tabela).update({ vigencia_inicio: vig })
     .eq("id", id).eq("loja_id", lojaId).is("vigencia_inicio", null).select("id");
-  if (error?.code === "23505") return { mensagem: "Já existe um valor cadastrado para esse mês. Exclua um dos dois ou escolha outro mês." };
+  if (error?.code === "23505") return { mensagem: "Já existe um valor cadastrado com essa data. Exclua um dos dois ou escolha outra data." };
   if (error) return { mensagem: mensagemErroBanco(error) };
   if (!data?.length) return { mensagem: "Registro não encontrado (talvez já tenha sido definido)." };
   revalidatePath(`/lojas/${lojaId}`);
