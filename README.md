@@ -16,8 +16,8 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 | 4 | Conciliação, projeção e alertas | **aprovada** |
 | 5 | Ciclo mensal, feriados, fechamento e reabertura | **aprovada** |
 | 6 | Cálculo do aluguel e exportações | **aprovada** |
-| 7 | Lançamentos em lote por planilha | **concluída — aguardando aprovação** |
-| 8 | Painéis | — |
+| 7 | Lançamentos em lote por planilha | **aprovada** |
+| 8 | Painéis: evolução por loja e segmento, rankings, histórico de discrepâncias | **concluída — aguardando aprovação** |
 
 ## Tecnologia
 
@@ -40,6 +40,8 @@ src/lib/trilha.ts      descrição legível da trilha de auditoria
 src/lib/conciliacao.ts regra da conciliação (médias, projeção, diferença, alertas)
 src/lib/aluguel.ts     regra do aluguel (percentual, mínimo/13º, complementar, ponto de equilíbrio, indicador)
 src/lib/relatorio/     Excel e PDF do fechamento (consolidado e por loja)
+src/lib/paineis.ts     agregação dos painéis (mesma regra da conciliação, mês a mês)
+src/components/graficos.tsx  gráficos SVG (linha, barras, divergente) com dica e versão em tabela
 scripts/criar-admin.ts cria o primeiro Administrador de um projeto novo
 test/unit              testes de regras (formatos, planilha, trilha)
 test/db                testes de permissão no banco (cada perfil, trilha imutável…)
@@ -109,6 +111,9 @@ usa `postgres://postgres@127.0.0.1:54329/postgres` (mude com `TEST_DATABASE_URL`
 ## Decisões de negócio
 
 Confirmadas com o setor comercial:
+
+- **Painéis (Fase 8):** somente Analista/Administrador. Rankings usam o último mês com
+  venda informada; segmentos além dos 6 maiores aparecem juntos em "Outros".
 
 - **Lançamentos em lote (Fase 7):** somente Analista/Administrador; sem fotos — a
   planilha arquivada é o comprovante e cada lançamento fica com origem "planilha".

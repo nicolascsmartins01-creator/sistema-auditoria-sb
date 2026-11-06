@@ -13,6 +13,7 @@ export default async function LayoutApp({ children }: { children: React.ReactNod
     { href: "/lojas", texto: "Lojas" },
   ];
   if (ehAnalista(u.perfil)) {
+    itens.push({ href: "/paineis", texto: "Painéis" });
     itens.push({ href: "/conciliacao", texto: "Conciliação" });
     itens.push({ href: "/fechamento", texto: "Fechamento" });
     itens.push({ href: "/lancamentos", texto: "Lançamentos" });
