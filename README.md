@@ -17,7 +17,7 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 | 5 | Ciclo mensal, feriados, fechamento e reabertura | **aprovada** |
 | 6 | Cálculo do aluguel e exportações | **aprovada** |
 | 7 | Lançamentos em lote por planilha | **aprovada** |
-| 8 | Painéis: evolução por loja e segmento, rankings, histórico de discrepâncias | **concluída — aguardando aprovação** |
+| 8 | Painéis: evolução por loja e segmento, rankings, histórico de discrepâncias | **aprovada** |
 
 ## Tecnologia
 
