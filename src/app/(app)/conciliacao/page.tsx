@@ -21,12 +21,14 @@ export default async function PaginaConciliacao({ searchParams }: { searchParams
   return (
     <>
       <Titulo>Conciliação mensal</Titulo>
-      <div className="mb-4 flex items-center gap-1 text-sm">
+      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
         <Link href={`/conciliacao?mes=${mesAnterior(mes)}`} className="rounded-full border bg-white px-3 py-1.5 text-azul">‹</Link>
         <span className="px-3 font-semibold">{nomeMes}/{a} · {r.diasNoMes} dias</span>
         <Link href={`/conciliacao?mes=${mesSeguinte(mes)}`} className="rounded-full border bg-white px-3 py-1.5 text-azul">›</Link>
         <span className="ml-3"><Etiqueta cor={NOMES_SITUACAO[est.situacao].cor}>{NOMES_SITUACAO[est.situacao].nome}</Etiqueta></span>
-        <Link href={`/fechamento/${mes}`} className="ml-auto text-azul hover:underline">Fechamento do mês →</Link>
+        <a href={`/conciliacao/exportar/excel?mes=${mes}`} className="ml-auto text-azul hover:underline">Prévia Excel</a>
+        <a href={`/conciliacao/exportar/pdf?mes=${mes}`} target="_blank" rel="noreferrer" className="text-azul hover:underline">Prévia PDF</a>
+        <Link href={`/fechamento/${mes}`} className="text-azul hover:underline">Fechamento do mês →</Link>
       </div>
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

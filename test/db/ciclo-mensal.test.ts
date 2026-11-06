@@ -125,3 +125,21 @@ describe("Relatório e fechamento automático", () => {
       .toEqual({ versao: 1, tipo: "automatico", gerado_por: null });
   });
 });
+
+describe("Fase 6 — consolidado para o aluguel", () => {
+  it("relatório traz todas as lojas com informado (inclusive não auditadas) e os valores vigentes", async () => {
+    const lj210 = (await um("select id from lojas where luc = 'LJ 210'")).id; // Cine Exemplo: não auditada
+    const imp = (await um("insert into importacoes (tipo, arquivo_nome, arquivo_path, competencia) values ('portal', 'g.pdf', 'p2', '2026-12-01') returning id")).id;
+    await db.query("insert into vendas_informadas (competencia, luc, loja_id, valor, importacao_id) values ('2026-12-01', 'LJ 210', $1, 400000, $2)", [lj210, imp]);
+    const rel = (await um("select relatorio_conciliacao('2026-12-01') r")).r;
+    const cine = rel.consolidado.find((l: { luc: string }) => l.luc === "LJ 210");
+    expect(cine).toMatchObject({ auditada: false, informado: 400000, dias_auditados: 0, projecao: null, percentual: 5, aluguel_minimo: 30000, falta_13_aluguel: true });
+    const moda = rel.consolidado.find((l: { luc: string }) => l.luc === "LJ 101/102/102A");
+    expect(moda).toMatchObject({ informado: null, aluguel_minimo: 39600, minimo_eh_13_aluguel: true }); // dezembro: 13º aluguel
+  });
+
+  it("prévia só para Analista/Administrador", async () => {
+    await expect(como(db, U.auditor, (q) => q("select previa_relatorio('2026-12-01')"))).rejects.toThrow(/Somente Analista/);
+    await como(db, U.analista, async (q) => { expect((await q("select previa_relatorio('2026-12-01') r")).rows[0].r.consolidado.length).toBeGreaterThan(0); });
+  });
+});

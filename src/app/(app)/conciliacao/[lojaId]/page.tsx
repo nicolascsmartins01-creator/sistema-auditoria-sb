@@ -8,6 +8,8 @@ import { formatarData, MESES } from "@/lib/formato";
 import { mesAnterior, mesSeguinte } from "@/lib/prazos";
 import { Aviso, Cartao, Etiqueta, Titulo } from "@/components/ui";
 import { Diferenca, reais } from "@/components/valores";
+import { calcularAluguel } from "@/lib/aluguel";
+import { formatarPercentual } from "@/lib/formato";
 
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
@@ -23,6 +25,13 @@ export default async function ConciliacaoLoja({ params, searchParams }: {
   if (!loja) notFound();
   const r = await carregarConciliacao(sb, mes);
   const c = r.conciliadas.find((x) => x.loja_id === lojaId);
+  const { data: vig } = await sb.rpc("valores_vigentes", { p_loja_id: lojaId, p_ano: Number(mes.slice(0, 4)), p_mes: Number(mes.slice(5, 7)) });
+  const vv = (vig as { percentual: number | null; aluguel_minimo: number | null; minimo_eh_13_aluguel: boolean; falta_13_aluguel: boolean }[] | null)?.[0];
+  const aluguel = c ? calcularAluguel({
+    informadoCentavos: c.informadoCentavos, projecaoCentavos: c.projecaoCentavos,
+    percentual: vv?.percentual == null ? null : Number(vv.percentual),
+    minimoCentavos: vv?.aluguel_minimo == null ? null : Math.round(Number(vv.aluguel_minimo) * 100),
+  }) : null;
   const semInf = r.semInformado.find((x) => x.loja_id === lojaId);
   const [a, m] = mes.split("-").map(Number);
 
@@ -55,6 +64,19 @@ export default async function ConciliacaoLoja({ params, searchParams }: {
                 <dd className="mt-1">{c.alerta ? <Etiqueta cor={c.classificacao === "para_maior" ? "verde" : "vermelho"}>⚠ {NOME_CLASSIFICACAO[c.classificacao]}</Etiqueta> : <Etiqueta>sem diferença</Etiqueta>}</dd></div>
             </dl>
           </Cartao>
+          {aluguel && (
+            <Cartao titulo="Cálculo do aluguel (prévia, valores vigentes no mês)" acoes={<a href={`/conciliacao/exportar/pdf?mes=${mes}&loja=${lojaId}`} target="_blank" rel="noreferrer" className="text-sm text-azul hover:underline">PDF da loja (prévia)</a>}>
+              <dl className="grid gap-4 sm:grid-cols-3 lg:grid-cols-6">
+                <Item r="Percentual vigente" v={vv?.percentual == null ? "—" : formatarPercentual(vv.percentual)} />
+                <Item r="Aluguel percentual" v={aluguel.aluguelPercentualCentavos == null ? "—" : reais(aluguel.aluguelPercentualCentavos)} s="informado × percentual" />
+                <Item r={vv?.minimo_eh_13_aluguel ? "Mínimo (13º aluguel)" : "Aluguel mínimo"} v={aluguel.minimoCentavos == null ? "—" : reais(aluguel.minimoCentavos)} s={vv?.falta_13_aluguel ? "13º não cadastrado: mínimo padrão" : undefined} />
+                <Item r="Complementar" v={aluguel.complementarCentavos == null ? "—" : aluguel.temComplementar ? reais(aluguel.complementarCentavos) : "sem complementar"} />
+                <Item r="Ponto de equilíbrio" v={aluguel.pontoEquilibrioCentavos == null ? "—" : reais(aluguel.pontoEquilibrioCentavos)} s="mínimo ÷ percentual" />
+                <Item r="Indicador (não cobrado)" v={aluguel.indicador?.diferencaCentavos == null ? "—" : reais(aluguel.indicador.diferencaCentavos)} s={aluguel.indicador?.usouProjecao ? "base = projeção auditada" : "projeção ≤ informado"} />
+              </dl>
+              {aluguel.pendencias.length > 0 && <Aviso tipo="alerta" className="mt-3">Cálculo incompleto: {aluguel.pendencias.join("; ")}.</Aviso>}
+            </Cartao>
+          )}
           <Cartao titulo="Dias auditados × média diária informada (maior desvio primeiro)">
             <table className="w-full text-sm">
               <thead className="text-left text-xs text-gray-500">
