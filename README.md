@@ -15,8 +15,8 @@ auditoria e calcula o aluguel percentual no fechamento de cada mês.
 | 3 | Importação do PDF mensal do portal | **aprovada** |
 | 4 | Conciliação, projeção e alertas | **aprovada** |
 | 5 | Ciclo mensal, feriados, fechamento e reabertura | **aprovada** |
-| 6 | Cálculo do aluguel e exportações | **concluída — aguardando aprovação** |
-| 7 | Lançamentos em lote por planilha | — |
+| 6 | Cálculo do aluguel e exportações | **aprovada** |
+| 7 | Lançamentos em lote por planilha | **concluída — aguardando aprovação** |
 | 8 | Painéis | — |
 
 ## Tecnologia
@@ -109,6 +109,9 @@ usa `postgres://postgres@127.0.0.1:54329/postgres` (mude com `TEST_DATABASE_URL`
 ## Decisões de negócio
 
 Confirmadas com o setor comercial:
+
+- **Lançamentos em lote (Fase 7):** somente Analista/Administrador; sem fotos — a
+  planilha arquivada é o comprovante e cada lançamento fica com origem "planilha".
 
 - **Lançamento (Fase 2):** o dia de hoje fica bloqueado (lança-se sempre o dia anterior);
   um lançamento por loja e dia; foto obrigatória (reduzida no aparelho); valor zero aceito

@@ -45,7 +45,10 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
           <div><dt className="text-sm text-gray-500">Auditor</dt><dd>{auditor}</dd></div>
           <div><dt className="text-sm text-gray-500">Digitado / recebido</dt><dd className="text-sm">{formatarDataHora(l.digitado_em)}<br />{formatarDataHora(l.recebido_em)}</dd></div>
         </dl>
-        {atraso > 1 && <p className="mt-3 text-sm text-amber-800">Lançado sem internet: chegou ao servidor {Math.round(atraso)} h depois de digitado.</p>}
+        {l.origem === "planilha" && (
+          <p className="mt-3 text-sm text-gray-700">Origem: <strong>importação de planilha</strong> (sem fotos; a planilha é o comprovante){l.importacao_id && <> — <a href={`/importacao/arquivo/${l.importacao_id}`} className="text-azul underline">baixar planilha original</a></>}.</p>
+        )}
+        {atraso > 1 && l.origem !== "planilha" && <p className="mt-3 text-sm text-amber-800">Lançado sem internet: chegou ao servidor {Math.round(atraso)} h depois de digitado.</p>}
       </Cartao>
 
       {mesFechado && (
@@ -60,7 +63,7 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
         </Cartao>
       )}
 
-      <Cartao titulo={`Fotos (${caminhos.length})`}>
+      {l.origem !== "planilha" && <Cartao titulo={`Fotos (${caminhos.length})`}>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {(urls ?? []).map((u, i) => u.signedUrl && (
             <a key={i} href={u.signedUrl} target="_blank" rel="noreferrer">
@@ -70,7 +73,7 @@ export default async function PaginaLancamento({ params }: { params: Promise<{ i
           ))}
         </div>
         <p className="mt-2 text-xs text-gray-500">Links de visualização temporários (10 minutos). As fotos ficam em área privada e não podem ser apagadas.</p>
-      </Cartao>
+      </Cartao>}
 
       {l.situacao !== "recusado" && !mesFechado && (
         <Cartao titulo="Editar lançamento">

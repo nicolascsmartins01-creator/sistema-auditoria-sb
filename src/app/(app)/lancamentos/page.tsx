@@ -18,7 +18,7 @@ export default async function PaginaLancamentos({ searchParams }: { searchParams
   const situacao = sp.situacao && SITUACOES[sp.situacao] ? sp.situacao : undefined;
   const sb = await criarClienteServidor();
   let q = sb.from("lancamentos")
-    .select("id, data_venda, valor, situacao, digitado_em, recebido_em, lojas(luc, nome_fantasia), usuarios!lancamentos_auditor_id_fkey(nome), lancamento_fotos(count)")
+    .select("id, data_venda, valor, situacao, origem, digitado_em, recebido_em, lojas(luc, nome_fantasia), usuarios!lancamentos_auditor_id_fkey(nome), lancamento_fotos(count)")
     .order("data_venda", { ascending: false }).order("recebido_em", { ascending: false }).limit(1000);
   if (situacao === "em_analise") q = q.eq("situacao", "em_analise");
   else {
@@ -62,7 +62,7 @@ export default async function PaginaLancamentos({ searchParams }: { searchParams
                   <Link href={`/lancamentos/${l.id}`} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2 hover:bg-azul-claro">
                     <span className="w-24 font-medium">{formatarData(l.data_venda)}</span>
                     <span className="min-w-0 flex-1">{loja.nome_fantasia} <span className="text-gray-500">({loja.luc})</span>
-                      <span className="block text-xs text-gray-500">{auditor} · {nFotos} foto(s)</span></span>
+                      <span className="block text-xs text-gray-500">{auditor} · {l.origem === "planilha" ? "importado de planilha" : `${nFotos} foto(s)`}</span></span>
                     <span className="w-32 text-right font-semibold">{formatarMoeda(l.valor)}</span>
                     <Etiqueta cor={SITUACOES[l.situacao].cor}>{SITUACOES[l.situacao].nome}</Etiqueta>
                   </Link>

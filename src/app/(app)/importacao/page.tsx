@@ -7,7 +7,7 @@ import { Cartao, Etiqueta, Titulo } from "@/components/ui";
 const TIPOS = [
   { href: "/importacao/lojas", titulo: "Planilha de lojas", texto: "Cadastro e atualização de lojas, percentuais, aluguel mínimo e 13º (Excel/CSV).", pronto: true },
   { href: "/importacao/portal", titulo: "PDF mensal do portal", texto: "Venda informada pelos lojistas, validada pela linha TOTAL.", pronto: true },
-  { href: null, titulo: "Lançamentos em lote", texto: "Vendas auditadas por planilha (Excel/CSV).", pronto: false, fase: 7 },
+  { href: "/importacao/lancamentos", titulo: "Lançamentos em lote", texto: "Vendas auditadas por planilha (Excel/CSV), com as mesmas regras do celular.", pronto: true },
 ];
 
 export default async function CentralImportacao() {
@@ -27,7 +27,7 @@ export default async function CentralImportacao() {
           {TIPOS.map((t) => {
             const conteudo = (
               <>
-                <p className="font-semibold text-gray-900">{t.titulo} {!t.pronto && <Etiqueta>Fase {t.fase}</Etiqueta>}</p>
+                <p className="font-semibold text-gray-900">{t.titulo}</p>
                 <p className="mt-1 text-sm text-gray-600">{t.texto}</p>
               </>
             );
@@ -43,6 +43,18 @@ export default async function CentralImportacao() {
             <ul className="divide-y divide-gray-100 text-sm">
               {imports.map((i) => {
                 const r = i.resumo as Record<string, number> & { campos?: string[] };
+                if (i.tipo === "lancamentos") {
+                  const rr = i.resumo as { linhas?: number; total?: number };
+                  return (
+                    <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
+                      <span className="w-36 text-gray-500">{formatarDataHora(i.criado_em)}</span>
+                      <span className="min-w-0 flex-1">
+                        <a href={`/importacao/arquivo/${i.id}`} className="text-azul hover:underline">{i.arquivo_nome}</a> <Etiqueta cor="amarelo">lançamentos</Etiqueta>
+                        <span className="block text-xs text-gray-500">{nomes.get(i.criado_por) ?? "—"} · {rr.linhas ?? 0} lançamento(s) · total R$ {Number(rr.total ?? 0).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>
+                      </span>
+                    </li>
+                  );
+                }
                 if (i.tipo === "portal") {
                   return (
                     <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 py-2">
